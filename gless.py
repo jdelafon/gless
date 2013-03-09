@@ -42,7 +42,7 @@ def read_tracks(trackList, nfeat=None, nbp=None):
             # Yield *nfeat* items
             while len_toyield < nfeat and current:
                 current.sort(key=sortkey)
-                print 'current:',current
+                #print 'current:',current
                 min_idx = current[0][-1]
                 toyield[min_idx].append(current.pop(0)[0])
                 len_toyield += 1
@@ -53,16 +53,15 @@ def read_tracks(trackList, nfeat=None, nbp=None):
                         available_streams.pop(min_idx)
                     except IndexError:
                         continue
-                print 'toyield',toyield
+                #print 'toyield',toyield
             # Add feats that go partially beyond
             if any(toyield):
-                maxpos = max(x[-1][1] for x in toyield)
-                print 'maxpos',maxpos
+                maxpos = max(x[-1][1] for x in toyield if x)
                 for n,x in enumerate(current):
                     if x[0][0] < maxpos:
-                        toyield[x[-1]].append((x[0][0],maxpos))
-                        current[n][0] = (maxpos,x[0][1])
-                print "Yielded",toyield
+                        toyield[x[-1]].append((x[0][0],min(x[0][1],maxpos)))
+                        current[n][0] = (min(x[0][1],maxpos),x[0][1])
+                #print "Yielded",toyield
                 yield toyield
             else: break
     elif nbp:
@@ -71,15 +70,15 @@ def read_tracks(trackList, nfeat=None, nbp=None):
 def pos2px(y,wwidth,reg_bp):
     return y*wwidth/reg_bp
 
-def gless(trackList,nfeat=10):
-    tracks = read_tracks(trackList,nfeat=nfeat)
-    try:
-        tracks_content = tracks.next()
-    except StopIteration:
-        print "Nothing to show"
-        sys.exit(0)
-    print 'tcontent:',tracks_content
+def draw(tracks_content,geometry=None):
+    def exit_on_keydown(event):
+        if event.char == chr(27):
+            sys.exit(0)
     root = tk.Tk()
+    if geometry: # keep previous position of the window
+        geometry = '+'.join(['']+geometry.split('+')[1:]) # "+70+27"
+        root.geometry(geometry)
+    root.bind("<Key>", exit_on_keydown)
     wwindow = 700
     htrack = 30
     feat_pad = 10
@@ -97,13 +96,41 @@ def gless(trackList,nfeat=10):
             x1 = pos2px(x1,wwindow-lwidth,reg_bp)
             x2 = pos2px(x2,wwindow-lwidth,reg_bp)
             c.create_rectangle(x1,y1,x2,y2, fill="blue")
-    root.mainloop()
+    root.wm_attributes("-topmost", 1) # makes the window appear on top
+    #root.mainloop()
+    return root
 
+def gless(trackList, nfeat=6, nbp=None):
+    tracks = read_tracks(trackList,nfeat=nfeat,nbp=nbp)
+    try:
+        tracks_content = tracks.next()
+    except StopIteration:
+        print "Nothing to show"
+        sys.exit(0)
+    drawn = 0
+    geometry = None
+    while True:
+        if not drawn:
+            root = draw(tracks_content,geometry)
+            geometry = root.geometry()
+        drawn += 1
+        key = raw_input()
+        if key == chr(27):
+            sys.exit(0)
+        elif key == ' ':
+            try:
+                tracks_content = tracks.next()
+                root.destroy()
+                drawn = 0
+            except StopIteration:
+                print "Nothing more to display."
+                sys.exit(0)
 
 trackList = ['testing_files/test1.bed','testing_files/test2.bed']
 gless(trackList)
 
 
+        #root.focus_set()
         #print c.winfo_reqheight(), c.winfo_reqwidth()
         #print c.winfo_width(), c.winfo_height()
 
