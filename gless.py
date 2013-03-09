@@ -1,6 +1,6 @@
 import Tkinter as tk
 import os,sys
-import argparse
+import argparse,re
 #fuckinfile = "/Users/julien/Library/Saved Application State/org.python.python.savedState"
 #os.chmod(fuckinfile,0o777)
 #os.remove(fuckinfile) # bug on osx
@@ -32,7 +32,7 @@ except ImportError:
     track = Parse
 
 
-def read10(trackList, nfeat=None, nbp=None):
+def read10(trackList, nfeat=None, nbp=None, selection=None):
     """Yield a list of lists [[(1,2),(3,4)], [(1,3),(5,6)]] with either the *nfeat*
        next items, or all next items within an *nbp* window."""
     chr = 'chr1'
@@ -74,7 +74,6 @@ def read10(trackList, nfeat=None, nbp=None):
         k = 0 # number of times called
         while available_streams:
             k += 1
-            #print "Window", str((k-1)*nbp)+'-'+str(k*nbp)
             toyield = [[] for _ in streams]
             toremove = []
             # Load items within *nbp* in *toyield*
@@ -90,12 +89,8 @@ def read10(trackList, nfeat=None, nbp=None):
                     elif x[0] < k*nbp:
                         toyield[n].append((x[0]-(k-1)*nbp,nbp))
                         current[n] = (k*nbp,x[1])
-                    else:
-                        break
-            for n in toremove:
-                available_streams.remove(n)
-            #print 'Toyield',str(toyield)
-            #print 'Toyield', [[(x[0]+(k-1)*nbp,x[1]+(k-1)*nbp) for x in t] for t in toyield]
+                    else: break
+            for n in toremove: available_streams.remove(n)
             if any(toyield):
                 yield toyield
             else:
@@ -104,7 +99,7 @@ def read10(trackList, nfeat=None, nbp=None):
 def draw(tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=None):
     """Create a new window and draw from the *tracks_content* coordinates
        (of the form [[(1,2),(3,4)], [(3,5),(4,6)],...] )."""
-    def pos2px(y,wwidth,reg_bp):
+    def _bp2px(y,wwidth,reg_bp):
         try: return y*wwidth/reg_bp
         except ZeroDivisionError: return 0
     def exit_on_Esc(event):
@@ -135,16 +130,16 @@ def draw(tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=None):
         for k,feat in enumerate(t):
             x1,x2 = (feat[0],feat[1])
             y1,y2 = (0+feat_pad,feat_len+feat_pad)
-            x1 = pos2px(x1,WIN_WIDTH-lwidth,reg_bp)
-            x2 = pos2px(x2,WIN_WIDTH-lwidth,reg_bp)
+            x1 = _bp2px(x1,WIN_WIDTH-lwidth,reg_bp)
+            x2 = _bp2px(x2,WIN_WIDTH-lwidth,reg_bp)
             c.create_rectangle(x1+1,y1,x2+1,y2, fill="blue")
     root.wm_attributes("-topmost", 1) # makes the window appear on top
-    #root.mainloop()
     return root
 
 
-def gless(trackList, nfeat=6, nbp=None):
-    tracks = read10(trackList,nfeat=nfeat,nbp=nbp)
+def gless(trackList, nfeat=6, nbp=None, selection=None):
+    """Main controller function after option parsing."""
+    tracks = read10(trackList,nfeat=nfeat,nbp=nbp,selection=selection)
     try: tracks_content = tracks.next()
     except StopIteration:
         print "Nothing to show"
@@ -166,17 +161,21 @@ def gless(trackList, nfeat=6, nbp=None):
             except StopIteration: print "End of file."
 
 def main():
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('-n','--nfeat', default=10, type=int,
-                       help='Number of features to display')
+    parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
+    parser.add_argument('-n','--nfeat', default=None, type=int,
+                       help="Number of features to display.")
     parser.add_argument('-b','--nbp', default=None, type=int,
-                       help='Number of base pairs to display')
+                       help="Number of base pairs to display.")
+    parser.add_argument('-s','--sel', default=None,
+                       help="Region to display, formatted as in 'chr1:12-34'.")
     parser.add_argument('file', nargs='+', default=None,
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
     trackList = args.file
     trackList = ['testing_files/test1.bed','testing_files/test2.bed']
-    gless(trackList,nfeat=args.nfeat,nbp=args.nbp)
+    assert (bool(args.nfeat) != bool(args.nbp)) != bool(args.sel) # one at a time (XOR)
+    if args.sel: assert re.search('chr[0-9XY]+:[0-9XY]+-[0-9XY]+',args.sel)
+    gless(trackList,nfeat=args.nfeat,nbp=args.nbp,selection=args.sel)
 
 if __name__ == '__main__':
     sys.exit(main())
@@ -185,3 +184,7 @@ if __name__ == '__main__':
 #root.focus_set()
 #print c.winfo_reqheight(), c.winfo_reqwidth()
 #print c.winfo_width(), c.winfo_height()
+#root.mainloop()
+#print 'Toyield',str(toyield)
+#print 'Toyield', [[(x[0]+(k-1)*nbp,x[1]+(k-1)*nbp) for x in t] for t in toyield]
+#print "Window", str((k-1)*nbp)+'-'+str(k*nbp)
