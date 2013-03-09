@@ -1,6 +1,9 @@
 import Tkinter as tk
 import os,sys
 import argparse
+#fuckinfile = "/Users/julien/Library/Saved Application State/org.python.python.savedState"
+#os.chmod(fuckinfile,0o777)
+#os.remove(fuckinfile) # bug on osx
 
 class Parse:
     """A replacement for btrack when bbcflib is not found, able to parse
@@ -36,28 +39,25 @@ def read10(trackList, nfeat=None, nbp=None):
     fields = ['start','end']
     streams = [track(t).read(chr,fields=fields) for t in trackList]
     available_streams = range(len(streams))
-    current = [(s.next(),k) for k,s in enumerate(streams)]
+    if nbp: nfeat = None
+    elif nfeat: nbp = None
     if nfeat:
+        current = [(s.next(),k) for k,s in enumerate(streams)]
+        sortkey = lambda x:x[0][0]
         # Repeat each time the function is called
-        sortkey=lambda x:x[0][0]
         while available_streams:
             toyield = [[] for _ in streams]
             len_toyield = 0
             # Yield *nfeat* items
             while len_toyield < nfeat and current:
                 current.sort(key=sortkey)
-                #print 'current:',current
                 min_idx = current[0][-1]
                 toyield[min_idx].append(current.pop(0)[0])
                 len_toyield += 1
-                try:
-                    current.append([streams[min_idx].next(),min_idx])
+                try: current.append([streams[min_idx].next(),min_idx])
                 except StopIteration:
-                    try:
-                        available_streams.pop(min_idx)
-                    except IndexError:
-                        continue
-                #print 'toyield',toyield
+                    try: available_streams.pop(min_idx)
+                    except IndexError: continue
             # Add feats that go partially beyond
             if any(toyield):
                 maxpos = max(x[-1][1] for x in toyield if x)
@@ -65,18 +65,48 @@ def read10(trackList, nfeat=None, nbp=None):
                     if x[0][0] < maxpos:
                         toyield[x[-1]].append((x[0][0],min(x[0][1],maxpos)))
                         current[n][0] = (min(x[0][1],maxpos),x[0][1])
-                #print "Yielded",toyield
                 yield toyield
             else: break
     elif nbp:
-        pass
+        current = [s.next() for k,s in enumerate(streams)]
+        sortkey = lambda x:x[0][0]
+        # Repeat each time the function is called
+        k = 0 # number of times called
+        while available_streams:
+            k += 1
+            #print "Window", str((k-1)*nbp)+'-'+str(k*nbp)
+            toyield = [[] for _ in streams]
+            toremove = []
+            # Load items within *nbp* in *toyield*
+            for n in available_streams:
+                while current[n]:
+                    x = current[n]
+                    if x[1] <= k*nbp:
+                        toyield[n].append((x[0]-(k-1)*nbp,x[1]-(k-1)*nbp))
+                        try: current[n] = streams[n].next()
+                        except StopIteration:
+                            current[n] = None
+                            toremove.append(n)
+                    elif x[0] < k*nbp:
+                        toyield[n].append((x[0]-(k-1)*nbp,nbp))
+                        current[n] = (k*nbp,x[1])
+                    else:
+                        break
+            for n in toremove:
+                available_streams.remove(n)
+            #print 'Toyield',str(toyield)
+            #print 'Toyield', [[(x[0]+(k-1)*nbp,x[1]+(k-1)*nbp) for x in t] for t in toyield]
+            if any(toyield):
+                yield toyield
+            else:
+                yield [[(0,0)] for _ in streams]
 
-def pos2px(y,wwidth,reg_bp):
-    return y*wwidth/reg_bp
-
-def draw(tracks_content, geometry=None, WIN_WIDTH=700):
+def draw(tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=None):
     """Create a new window and draw from the *tracks_content* coordinates
        (of the form [[(1,2),(3,4)], [(3,5),(4,6)],...] )."""
+    def pos2px(y,wwidth,reg_bp):
+        try: return y*wwidth/reg_bp
+        except ZeroDivisionError: return 0
     def exit_on_Esc(event):
         if event.keysym == 'Escape':
             root.destroy()
@@ -95,6 +125,7 @@ def draw(tracks_content, geometry=None, WIN_WIDTH=700):
     feat_pad = 10
     feat_len = htrack - 2*feat_pad
     reg_bp = max(x[1] for t in tracks_content for x in t) # whole region size in bp
+    reg_bp = max(reg_bp,nbp)
     for n,t in enumerate(tracks_content):
         l = tk.Label(root,text="track%d"%(n+1))
         lwidth = l.winfo_reqwidth()
@@ -102,19 +133,19 @@ def draw(tracks_content, geometry=None, WIN_WIDTH=700):
         c = tk.Canvas(root, width=WIN_WIDTH-lwidth, height=htrack, bg='white')
         c.grid(row=n,column=1)
         for k,feat in enumerate(t):
-            x1,x2 = (feat[0]+1,feat[1]+1)
+            x1,x2 = (feat[0],feat[1])
             y1,y2 = (0+feat_pad,feat_len+feat_pad)
             x1 = pos2px(x1,WIN_WIDTH-lwidth,reg_bp)
             x2 = pos2px(x2,WIN_WIDTH-lwidth,reg_bp)
-            c.create_rectangle(x1,y1,x2,y2, fill="blue")
+            c.create_rectangle(x1+1,y1,x2+1,y2, fill="blue")
     root.wm_attributes("-topmost", 1) # makes the window appear on top
     #root.mainloop()
     return root
 
+
 def gless(trackList, nfeat=6, nbp=None):
     tracks = read10(trackList,nfeat=nfeat,nbp=nbp)
-    try:
-        tracks_content = tracks.next()
+    try: tracks_content = tracks.next()
     except StopIteration:
         print "Nothing to show"
         sys.exit(0)
@@ -122,21 +153,17 @@ def gless(trackList, nfeat=6, nbp=None):
     geometry = None
     while True:
         if not drawn:
-            root = draw(tracks_content,geometry)
+            root = draw(tracks_content,geometry,nfeat=nfeat,nbp=nbp)
             geometry = root.geometry()
         drawn += 1
         key = raw_input()
-        if key == '':  # Enter pressed. `Esc` is chr(27)
-            sys.exit(0)
+        if key == '': sys.exit(0) # "Enter" pressed
         elif key == ' ':
-            root.destroy()
             try:
                 tracks_content = tracks.next()
+                root.destroy()
                 drawn = 0
-            except StopIteration:
-                print "Nothing more to display."
-                sys.exit(0)
-
+            except StopIteration: print "End of file."
 
 def main():
     parser = argparse.ArgumentParser(description='Process some integers.')
