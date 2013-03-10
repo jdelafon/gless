@@ -31,10 +31,9 @@ try:
 except ImportError:
     track = Parse
 
-def read10(trackList, nfeat=None, nbp=None, selection=None):
+def read10(trackList,chr,nfeat,nbp,selection):
     """Yield a list of lists [[(1,2),(3,4)], [(1,3),(5,6)]] with either the *nfeat*
        next items, or all next items within an *nbp* window."""
-    chr = 'chr1'
     fields = ['start','end']
     streams = [track(t).read(chr,fields=fields) for t in trackList]
     available_streams = range(len(streams))
@@ -95,9 +94,10 @@ def read10(trackList, nfeat=None, nbp=None, selection=None):
             else:
                 yield [[(0,0)] for _ in streams]
 
-def draw(names, tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=None):
+def draw(names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos):
     """Create a new window and draw from the *tracks_content* coordinates
        (of the form [[(1,2),(3,4)], [(3,5),(4,6)],...] )."""
+    WIN_WIDTH=700
     def _bp2px(y,wwidth,reg_bp):
         try: return y*wwidth/reg_bp
         except ZeroDivisionError: return 0
@@ -117,6 +117,7 @@ def draw(names, tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=No
         geometry = '+'.join(['']+geometry.split('+')[1:]) # "+70+27"
         root.geometry(geometry)
     htrack = 30
+    rmargin = 50
     feat_pad = 10
     feat_thk = htrack - 2*feat_pad
     reg_bp = max(x[1] for t in tracks_content for x in t) # whole region size in bp
@@ -125,9 +126,10 @@ def draw(names, tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=No
     wlabel = 0
     # Draw labels
     for n,name in enumerate(names):
-        l = tk.Label(root,text=names[n], highlightthickness=0)
+        l = tk.Label(root,text=names[n],bd=0,highlightthickness=0)
         wlabel = max(l.winfo_reqwidth(),wlabel)
-        l.grid(row=n,column=0,ipadx=4,ipady=4)
+        l.grid(row=n,column=0)#,ipadx=4,ipady=4)
+    wcanvas = WIN_WIDTH-wlabel-rmargin
     # Draw the tracks
     for n,t in enumerate(tracks_content):
         format = os.path.splitext(names[n])[1]
@@ -136,60 +138,80 @@ def draw(names, tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=No
         elif format.lower() in ['.bedGraph','wig','.bigWig','.sga']:
             type = 'density'
         c = canvas[n]
-        c.config(width=WIN_WIDTH-wlabel)
+        c.config(width=wcanvas)
         c.grid(row=n,column=1)
         if type == 'intervals':
             c.create_line(0,htrack/2.,WIN_WIDTH,htrack/2.,fill="grey") # track axis
             y1,y2 = (0+feat_pad,feat_thk+feat_pad)
             for k,feat in enumerate(t):
                 x1,x2 = (feat[0],feat[1])
-                x1 = _bp2px(x1,WIN_WIDTH-wlabel,reg_bp)
-                x2 = _bp2px(x2,WIN_WIDTH-wlabel,reg_bp)
+                x1 = _bp2px(x1,wcanvas,reg_bp)
+                x2 = _bp2px(x2,wcanvas,reg_bp)
                 c.create_rectangle(x1,y1,x2,y2, fill="blue")
         elif type == 'density':
             pass
-        c.create_line(0,0,0,htrack,fill="grey") # separator label|canvas
+        #c.create_line(0,0,0,htrack,fill="grey") # separator label|canvas
+    # Add a blank frame on the right as a margin
+    for n in range(len(names)):
+        w = tk.Frame(width=rmargin,height=htrack,bg="grey")
+        w.grid(row=n,column=2)
     # Axis & ticks
-    c = tk.Canvas(root, width=WIN_WIDTH-wlabel, height=2*htrack, bd=0, highlightthickness=0)
+    minpos = maxpos
+    if nbp: maxpos = ntimes*nbp
+    elif nfeat: maxpos = reg_bp
+    min_label = tk.Label(text=str(minpos),bd=0,anchor='e')
+    min_label.grid(row=n+1,column=0,sticky='e',ipadx=5)
+    c = tk.Canvas(root,width=wcanvas,height=2*htrack,bd=0,highlightthickness=0)
     c.grid(row=n+1,column=1)
     pad = c.winfo_reqheight()/2.
-    c.create_line(0,0,0,2*pad,fill="grey")         # separator
+    #c.create_line(0,0,0,2*pad,fill="grey")         # separator
     c.create_line(0,pad,WIN_WIDTH,pad) # axis
     for n,t in enumerate(tracks_content):
         for k,feat in enumerate(t):
-            x1,x2 = (feat[0],feat[1])
-            x1 = _bp2px(x1,WIN_WIDTH-wlabel,reg_bp)
-            x2 = _bp2px(x2,WIN_WIDTH-wlabel,reg_bp)
+            f1,f2 = (feat[0],feat[1])
+            x1 = _bp2px(f1,wcanvas,reg_bp)
+            x2 = _bp2px(f2,wcanvas,reg_bp)
             c.create_line(x1,pad,x1,pad-5)
             c.create_line(x2,pad,x2,pad+5)
-            c.create_text(x1,pad-5,text=str(feat[0]),anchor='s')
-            c.create_text(x2,pad+5,text=str(feat[1]),anchor='n')
+            if nbp:
+                f1 = feat[0]+(ntimes-1)*nbp
+                f2 = feat[1]+(ntimes-1)*nbp
+            print f1,f2,'-',minpos,maxpos
+            if f1!=minpos and f1!=maxpos:
+                c.create_text(x1,pad-5,text=str(f1),anchor='s')
+            if f2!=minpos and f2!=maxpos:
+                c.create_text(x2,pad+5,text=str(f2),anchor='n')
+    max_label = tk.Label(text=str(maxpos),bd=0,anchor='w')
+    max_label.grid(row=n+1,column=2,sticky='w')
     root.wm_attributes("-topmost", 1) # makes the window appear on top
-    return root
+    return root,maxpos
 
-
-def gless(trackList, nfeat=6, nbp=None, selection=None):
+def gless(trackList, nfeat=None, nbp=None, selection=None):
     """Main controller function after option parsing."""
-    tracks = read10(trackList,nfeat=nfeat,nbp=nbp,selection=selection)
+    chr = 'chr1'
+    tracks = read10(trackList,chr,nfeat,nbp,selection)
     names = [os.path.basename(t) for t in trackList]
     try: tracks_content = tracks.next()
     except StopIteration:
         print "Nothing to show"
         sys.exit(0)
-    drawn = 0
+    needtodraw = True
+    ntimes = 1 # Number of times spacebar is hit
+    maxpos = 0 # Last biggest coordinate
     geometry = None
     while True:
-        if not drawn:
-            root = draw(names,tracks_content,geometry,nfeat=nfeat,nbp=nbp)
+        if needtodraw:
+            root,maxpos = draw(names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos)
             geometry = root.geometry()
-        drawn += 1
+            needtodraw = False
+            ntimes += 1
         key = raw_input()
         if key == '': sys.exit(0) # "Enter" pressed
         elif key == ' ':
             try:
                 tracks_content = tracks.next()
                 root.destroy()
-                drawn = 0
+                needtodraw = True
             except StopIteration: print "End of file."
 
 def main():
