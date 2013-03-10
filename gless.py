@@ -215,8 +215,8 @@ def draw(names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos):
 
 def gless(trackList, nfeat=None, nbp=None, sel=None):
     """Main controller function after option parsing."""
-    tracks = read10(trackList,nfeat,nbp,sel)
     names = [os.path.basename(t) for t in trackList]
+    tracks = read10(trackList,nfeat,nbp,sel)
     try: tracks_content = tracks.next()
     except StopIteration:
         print "Nothing to show"
@@ -242,7 +242,7 @@ def gless(trackList, nfeat=None, nbp=None, sel=None):
 
 def main():
     parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
-    parser.add_argument('-n','--nfeat', default=None, type=int,
+    parser.add_argument('-n','--nfeat', default=10, type=int,
                        help="Number of features to display.")
     parser.add_argument('-b','--nbp', default=None, type=int,
                        help="Number of base pairs to display.")
@@ -251,12 +251,12 @@ def main():
     parser.add_argument('file', nargs='+', default=None,
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
-    trackList = args.file
-    if not (bool(args.nfeat) != bool(args.nbp)): # one at a time (XOR)
+    if args.nfeat and args.nbp:
         print "Only one of -n/-b is allowed at a time."; sys.exit(1)
+    elif args.nbp: args.nfeat = None
     elif args.nfeat and args.nfeat > 10000:
         print "Up to 10000 features permitted, got -n %s." % args.nfeat; sys.exit(1)
-    gless(trackList,nfeat=args.nfeat,nbp=args.nbp,sel=args.sel)
+    gless(trackList=args.file,nfeat=args.nfeat,nbp=args.nbp,sel=args.sel)
 
 if __name__ == '__main__':
     sys.exit(main())
