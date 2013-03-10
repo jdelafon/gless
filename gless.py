@@ -11,7 +11,7 @@ class Parse:
     def __init__(self,filename):
         self.filehandle = os.path.abspath(filename)
         self.format = os.path.splitext(filename)[1][1:]
-    def read(self,chrom=None,fields=None):
+    def read(self,fields=None,selection=None):
         with open(self.filehandle) as f:
             for line in f:
                 line = line.strip().split()
@@ -22,7 +22,7 @@ class Parse:
                     raise ValueError(("Library 'bbcflib' not found. "
                                       "Only 'bed' and 'bedGraph' formats available "
                                       "(got '%s')." % os.path.basename(self.filehandle)))
-                if chrom and chr != chrom:
+                if selection and selection['chr'] != chr:
                     continue
                 yield (start,end)+tuple(line[3:])
 try:
@@ -39,16 +39,28 @@ def format(filename):
         elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
             return 'density'
 
-def read10(trackList,chr,nfeat,nbp,selection):
+def parse_selection(sel):
+    if not sel: return
+    elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
+        chr,coord = sel.split(':')
+        st,en = coord.split('-')
+        return {'chr':chr,'start':(int(st),int(en)),'end':(int(st),int(en))}
+    elif re.search('^chr[0-9XY]*$',sel):
+        return {'chr':sel}
+    else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
+
+def read10(trackList,nfeat,nbp,sel):
     """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6),n]] with either the *nfeat*
        next items, or all next items within an *nbp* window. `n` is a name or a score."""
+    #sel = 'chr1'
     tracks = [track(t) for t in trackList]
-    streams = [t.read(chr,fields=t.fields[1:4]) for t in tracks]
+    sel = parse_selection(sel)
+    streams = [t.read(fields=t.fields[1:4],selection=sel) for t in tracks]
     available_streams = range(len(streams))
     if nbp: nfeat = None
     elif nfeat: nbp = None
     if nfeat:
-        current = [(s.next(),k) for k,s in enumerate(streams)]
+        current = [[s.next(),k] for k,s in enumerate(streams)]
         sortkey = lambda x:x[0][0]
         # Repeat each time the function is called
         while available_streams:
@@ -70,7 +82,7 @@ def read10(trackList,chr,nfeat,nbp,selection):
                 for n,x in enumerate(current):
                     if x[0][0] < maxpos:
                         toyield[x[-1]].append((x[0][0],min(x[0][1],maxpos),x[0][2]))
-                        current[n][0] = (min(x[0][1],maxpos),x[0][1],x[0][2])
+                        current[n][0] = [min(x[0][1],maxpos),x[0][1],x[0][2]]
                 yield toyield
             else: break
     elif nbp:
@@ -106,7 +118,7 @@ def draw(names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos):
     """Create a new window and draw from the *tracks_content* coordinates
        (of the form [[(1,2,n),(3,4,n)], [(3,5,n),(4,6,n)],...],
        where `n` is either a name or a score)."""
-    WIN_WIDTH=800
+    WIN_WIDTH = 800
     htrack = 30
     rmargin = 100
     feat_pad = 10
@@ -201,10 +213,9 @@ def draw(names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos):
     root.wm_attributes("-topmost", 1) # makes the window appear on top
     return root,maxpos
 
-def gless(trackList, nfeat=None, nbp=None, selection=None):
+def gless(trackList, nfeat=None, nbp=None, sel=None):
     """Main controller function after option parsing."""
-    chr = 'chr1'
-    tracks = read10(trackList,chr,nfeat,nbp,selection)
+    tracks = read10(trackList,nfeat,nbp,sel)
     names = [os.path.basename(t) for t in trackList]
     try: tracks_content = tracks.next()
     except StopIteration:
@@ -241,9 +252,11 @@ def main():
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
     trackList = args.file
-    assert (bool(args.nfeat) != bool(args.nbp)) != bool(args.sel) # one at a time (XOR)
-    if args.sel: assert re.search('chr[0-9XY]+:[0-9XY]+-[0-9XY]+',args.sel)
-    gless(trackList,nfeat=args.nfeat,nbp=args.nbp,selection=args.sel)
+    if not (bool(args.nfeat) != bool(args.nbp)): # one at a time (XOR)
+        print "Only one of -n/-b is allowed at a time."; sys.exit(1)
+    elif args.nfeat and args.nfeat > 10000:
+        print "Up to 10000 features permitted, got -n %s." % args.nfeat; sys.exit(1)
+    gless(trackList,nfeat=args.nfeat,nbp=args.nbp,sel=args.sel)
 
 if __name__ == '__main__':
     sys.exit(main())
