@@ -132,24 +132,28 @@ def draw(names, tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=No
         c = canvas[n]
         c.config(width=WIN_WIDTH-wlabel)
         c.grid(row=n,column=1)
+        c.create_line(0,htrack/2.,WIN_WIDTH,htrack/2.,fill="grey") # axis
         y1,y2 = (0+feat_pad,feat_thk+feat_pad)
         for k,feat in enumerate(t):
             x1,x2 = (feat[0],feat[1])
             x1 = _bp2px(x1,WIN_WIDTH-wlabel,reg_bp)
             x2 = _bp2px(x2,WIN_WIDTH-wlabel,reg_bp)
             c.create_rectangle(x1,y1,x2,y2, fill="blue")
-        c.create_line(0,0,0,htrack) # separator label|canvas
-    c = tk.Canvas(root, width=WIN_WIDTH-wlabel, height=htrack, bd=0, highlightthickness=0)
+        c.create_line(0,0,0,htrack,fill="grey") # separator label|canvas
+    c = tk.Canvas(root, width=WIN_WIDTH-wlabel, height=2*htrack, bd=0, highlightthickness=0)
     c.grid(row=n+1,column=1)
-    c.create_line(0,0,WIN_WIDTH,0)
+    pad = c.winfo_reqheight()/2.
+    c.create_line(0,0,0,2*pad,fill="grey")         # separator
+    c.create_line(0,pad,WIN_WIDTH,pad) # axis
     for n,t in enumerate(tracks_content):
         for k,feat in enumerate(t):
             x1,x2 = (feat[0],feat[1])
             x1 = _bp2px(x1,WIN_WIDTH-wlabel,reg_bp)
             x2 = _bp2px(x2,WIN_WIDTH-wlabel,reg_bp)
-            c.create_line(x1,0,x1,5)
-            c.create_line(x2,0,x2,5)
-            c.create_text(x1,10,text="text",anchor='n')
+            c.create_line(x1,pad,x1,pad-5)
+            c.create_line(x2,pad,x2,pad+5)
+            c.create_text(x1,pad-5,text=str(feat[0]),anchor='s')
+            c.create_text(x2,pad+5,text=str(feat[1]),anchor='n')
     root.wm_attributes("-topmost", 1) # makes the window appear on top
     return root
 
