@@ -22,8 +22,11 @@ class Parse:
                     raise ValueError(("Library 'bbcflib' not found. "
                                       "Only 'bed' and 'bedGraph' formats available "
                                       "(got '%s')." % os.path.basename(self.filehandle)))
-                if selection and selection['chr'] != chr:
-                    continue
+                if selection:
+                    if selection['chr'] != chr \
+                       or not selection['start'][0] < start < selection['start'][1] \
+                       or not selection['end'][0] < start < selection['end'][1]:
+                        break
                 yield (start,end)+tuple(line[3:])
 try:
     from bbcflib.btrack import track
@@ -243,17 +246,16 @@ def gless(trackList, nfeat=None, nbp=None, sel=None):
 def main():
     parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
     parser.add_argument('-n','--nfeat', default=10, type=int,
-                       help="Number of features to display.")
+                       help="Number of features to display, exclusive with -b. [10]")
     parser.add_argument('-b','--nbp', default=None, type=int,
-                       help="Number of base pairs to display.")
+                       help="Number of base pairs to display, exclusive with -n.")
     parser.add_argument('-s','--sel', default=None,
-                       help="Region to display, formatted as in 'chr1:12-34'.")
+                       help="Region to display, formatted as in 'chr1:12-34', or \
+                             a chromosome only ('chr1').")
     parser.add_argument('file', nargs='+', default=None,
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
-    if args.nfeat and args.nbp:
-        print "Only one of -n/-b is allowed at a time."; sys.exit(1)
-    elif args.nbp: args.nfeat = None
+    if args.nbp: args.nfeat = None
     elif args.nfeat and args.nfeat > 10000:
         print "Up to 10000 features permitted, got -n %s." % args.nfeat; sys.exit(1)
     gless(trackList=args.file,nfeat=args.nfeat,nbp=args.nbp,sel=args.sel)
