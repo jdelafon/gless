@@ -31,7 +31,6 @@ try:
 except ImportError:
     track = Parse
 
-
 def read10(trackList, nfeat=None, nbp=None, selection=None):
     """Yield a list of lists [[(1,2),(3,4)], [(1,3),(5,6)]] with either the *nfeat*
        next items, or all next items within an *nbp* window."""
@@ -123,23 +122,34 @@ def draw(names, tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=No
     reg_bp = max(x[1] for t in tracks_content for x in t) # whole region size in bp
     reg_bp = max(reg_bp,nbp)
     canvas = [tk.Canvas(root, height=htrack, bd=0, highlightthickness=0) for _ in names]
-    for n,t in enumerate(tracks_content):
+    wlabel = 0
+    # Draw labels
+    for n,name in enumerate(names):
         l = tk.Label(root,text=names[n], highlightthickness=0)
-        wlabel = l.winfo_reqwidth()
-        #hlabel = l.winfo_reqheight()
-        #htrack = hlabel
+        wlabel = max(l.winfo_reqwidth(),wlabel)
         l.grid(row=n,column=0,ipadx=4,ipady=4)
+    # Draw the tracks
+    for n,t in enumerate(tracks_content):
+        format = os.path.splitext(names[n])[1]
+        if format.lower() in ['.bed']:
+            type = 'intervals'
+        elif format.lower() in ['.bedGraph','wig','.bigWig','.sga']:
+            type = 'density'
         c = canvas[n]
         c.config(width=WIN_WIDTH-wlabel)
         c.grid(row=n,column=1)
-        c.create_line(0,htrack/2.,WIN_WIDTH,htrack/2.,fill="grey") # axis
-        y1,y2 = (0+feat_pad,feat_thk+feat_pad)
-        for k,feat in enumerate(t):
-            x1,x2 = (feat[0],feat[1])
-            x1 = _bp2px(x1,WIN_WIDTH-wlabel,reg_bp)
-            x2 = _bp2px(x2,WIN_WIDTH-wlabel,reg_bp)
-            c.create_rectangle(x1,y1,x2,y2, fill="blue")
+        if type == 'intervals':
+            c.create_line(0,htrack/2.,WIN_WIDTH,htrack/2.,fill="grey") # track axis
+            y1,y2 = (0+feat_pad,feat_thk+feat_pad)
+            for k,feat in enumerate(t):
+                x1,x2 = (feat[0],feat[1])
+                x1 = _bp2px(x1,WIN_WIDTH-wlabel,reg_bp)
+                x2 = _bp2px(x2,WIN_WIDTH-wlabel,reg_bp)
+                c.create_rectangle(x1,y1,x2,y2, fill="blue")
+        elif type == 'density':
+            pass
         c.create_line(0,0,0,htrack,fill="grey") # separator label|canvas
+    # Axis & ticks
     c = tk.Canvas(root, width=WIN_WIDTH-wlabel, height=2*htrack, bd=0, highlightthickness=0)
     c.grid(row=n+1,column=1)
     pad = c.winfo_reqheight()/2.
@@ -194,7 +204,6 @@ def main():
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
     trackList = args.file
-    trackList = ['testing_files/test1.bed','testing_files/test2.bed']
     assert (bool(args.nfeat) != bool(args.nbp)) != bool(args.sel) # one at a time (XOR)
     if args.sel: assert re.search('chr[0-9XY]+:[0-9XY]+-[0-9XY]+',args.sel)
     gless(trackList,nfeat=args.nfeat,nbp=args.nbp,selection=args.sel)
@@ -202,7 +211,10 @@ def main():
 if __name__ == '__main__':
     sys.exit(main())
 
+# python gless.py -n 12 testing_files/test1.bed testing_files/test2.bed testing_files/yeast_genes.bed
 
+
+#trackList = ['testing_files/test1.bed','testing_files/test2.bed']
 #root.focus_set()
 #print c.winfo_reqheight(), c.winfo_reqwidth()
 #print c.winfo_width(), c.winfo_height()
