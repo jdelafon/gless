@@ -96,7 +96,7 @@ def read10(trackList, nfeat=None, nbp=None, selection=None):
             else:
                 yield [[(0,0)] for _ in streams]
 
-def draw(tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=None):
+def draw(names, tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=None):
     """Create a new window and draw from the *tracks_content* coordinates
        (of the form [[(1,2),(3,4)], [(3,5),(4,6)],...] )."""
     def _bp2px(y,wwidth,reg_bp):
@@ -113,26 +113,43 @@ def draw(tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=None):
             pass
     root = tk.Tk()
     root.bind("<Key>", exit_on_Esc)
+    root.config(bg="grey")
     if geometry: # keep previous position of the window
         geometry = '+'.join(['']+geometry.split('+')[1:]) # "+70+27"
         root.geometry(geometry)
     htrack = 30
     feat_pad = 10
-    feat_len = htrack - 2*feat_pad
+    feat_thk = htrack - 2*feat_pad
     reg_bp = max(x[1] for t in tracks_content for x in t) # whole region size in bp
     reg_bp = max(reg_bp,nbp)
+    canvas = [tk.Canvas(root, height=htrack, bd=0, highlightthickness=0) for _ in names]
     for n,t in enumerate(tracks_content):
-        l = tk.Label(root,text="track%d"%(n+1))
-        lwidth = l.winfo_reqwidth()
-        l.grid(row=n,column=0,padx=5,pady=5)
-        c = tk.Canvas(root, width=WIN_WIDTH-lwidth, height=htrack, bg='white')
+        l = tk.Label(root,text=names[n], highlightthickness=0)
+        wlabel = l.winfo_reqwidth()
+        #hlabel = l.winfo_reqheight()
+        #htrack = hlabel
+        l.grid(row=n,column=0,ipadx=4,ipady=4)
+        c = canvas[n]
+        c.config(width=WIN_WIDTH-wlabel)
         c.grid(row=n,column=1)
+        y1,y2 = (0+feat_pad,feat_thk+feat_pad)
         for k,feat in enumerate(t):
             x1,x2 = (feat[0],feat[1])
-            y1,y2 = (0+feat_pad,feat_len+feat_pad)
-            x1 = _bp2px(x1,WIN_WIDTH-lwidth,reg_bp)
-            x2 = _bp2px(x2,WIN_WIDTH-lwidth,reg_bp)
-            c.create_rectangle(x1+1,y1,x2+1,y2, fill="blue")
+            x1 = _bp2px(x1,WIN_WIDTH-wlabel,reg_bp)
+            x2 = _bp2px(x2,WIN_WIDTH-wlabel,reg_bp)
+            c.create_rectangle(x1,y1,x2,y2, fill="blue")
+        c.create_line(0,0,0,htrack) # separator label|canvas
+    c = tk.Canvas(root, width=WIN_WIDTH-wlabel, height=htrack, bd=0, highlightthickness=0)
+    c.grid(row=n+1,column=1)
+    c.create_line(0,0,WIN_WIDTH,0)
+    for n,t in enumerate(tracks_content):
+        for k,feat in enumerate(t):
+            x1,x2 = (feat[0],feat[1])
+            x1 = _bp2px(x1,WIN_WIDTH-wlabel,reg_bp)
+            x2 = _bp2px(x2,WIN_WIDTH-wlabel,reg_bp)
+            c.create_line(x1,0,x1,5)
+            c.create_line(x2,0,x2,5)
+            c.create_text(x1,10,text="text",anchor='n')
     root.wm_attributes("-topmost", 1) # makes the window appear on top
     return root
 
@@ -140,6 +157,7 @@ def draw(tracks_content, geometry=None, WIN_WIDTH=700, nfeat=None, nbp=None):
 def gless(trackList, nfeat=6, nbp=None, selection=None):
     """Main controller function after option parsing."""
     tracks = read10(trackList,nfeat=nfeat,nbp=nbp,selection=selection)
+    names = [os.path.basename(t) for t in trackList]
     try: tracks_content = tracks.next()
     except StopIteration:
         print "Nothing to show"
@@ -148,7 +166,7 @@ def gless(trackList, nfeat=6, nbp=None, selection=None):
     geometry = None
     while True:
         if not drawn:
-            root = draw(tracks_content,geometry,nfeat=nfeat,nbp=nbp)
+            root = draw(names,tracks_content,geometry,nfeat=nfeat,nbp=nbp)
             geometry = root.geometry()
         drawn += 1
         key = raw_input()
@@ -187,4 +205,5 @@ if __name__ == '__main__':
 #root.mainloop()
 #print 'Toyield',str(toyield)
 #print 'Toyield', [[(x[0]+(k-1)*nbp,x[1]+(k-1)*nbp) for x in t] for t in toyield]
+#bg = "#%02x%02x%02x" % (255, 255, 224) #beige background
 #print "Window", str((k-1)*nbp)+'-'+str(k*nbp)
