@@ -117,104 +117,134 @@ def read10(trackList,nfeat,nbp,sel):
             else:
                 yield [[(0,0,'')] for _ in streams]
 
-def draw(names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos):
-    """Create a new window and draw from the *tracks_content* coordinates
-       (of the form [[(1,2,n),(3,4,n)], [(3,5,n),(4,6,n)],...],
-       where `n` is either a name or a score)."""
-    WIN_WIDTH = 800
-    htrack = 30
-    rmargin = 100
-    feat_pad = 10
-    bg = "grey"
-    canvas_bg = "white"
-    line_col = "black"
-    feat_col = "blue"
-    def _bp2px(y,wwidth,reg_bp):
+class Drawer:
+    def __init__(self,names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos):
+        self.names = names
+        self.tracks_content = tracks_content
+        self.nfeat = nfeat
+        self.nbp = nbp
+        self.ntimes = ntimes
+        self.maxpos = maxpos
+        self.minpos = 0
+        # Geometry
+        self.geometry = geometry
+        self.root = tk.Tk()
+        self.WIDTH = 800
+        self.htrack = 30
+        self.rmargin = 100
+        self.feat_pad = 10
+        self.wlabel = 0
+        self.wcanvas = 0
+        self.reg_bp = 0
+        # Colors
+        self.bg = "grey"
+        self.canvas_bg = "white"
+        self.feat_col = "blue"
+        self.line_col = "black"
+
+    def bp2px(self,y,wwidth,reg_bp):
         try: return y*wwidth/reg_bp
         except ZeroDivisionError: return 0
-    def exit_on_Esc(event):
-        if event.keysym == 'Escape':
-            root.destroy()
-            sys.exit(0)
-    def shift_on_arrow(event):
-        if event.keysym == 'Left':
-            pass # backwards??
-        if event.keysym == 'Right':
-            pass
-    root = tk.Tk()
-    root.bind("<Key>", exit_on_Esc)
-    root.config(bg=bg)
-    if geometry: # keep previous position of the window
-        geometry = '+'.join(['']+geometry.split('+')[1:]) # "+70+27"
-        root.geometry(geometry)
-    feat_thk = htrack - 2*feat_pad
-    reg_bp = max(x[1] for t in tracks_content for x in t) # whole region size in bp
-    reg_bp = max(reg_bp,nbp)
-    canvas = [tk.Canvas(root,height=htrack,bd=0,bg=canvas_bg,highlightthickness=0)
-              for _ in names]
-    wlabel = 0
-    # Draw labels
-    for n,name in enumerate(names):
-        l = tk.Label(root,text=names[n],bd=0,highlightthickness=0,bg=bg,padx=5)
-        wlabel = max(l.winfo_reqwidth(),wlabel)
-        l.grid(row=n,column=0)#,ipadx=4,ipady=4)
-    wcanvas = WIN_WIDTH-wlabel-rmargin
-    # Draw the tracks
-    for n,t in enumerate(tracks_content):
-        type = format(names[n])
-        c = canvas[n]
-        c.config(width=wcanvas)
-        c.grid(row=n,column=1)
-        if type == 'intervals':
-            c.create_line(0,htrack/2.,WIN_WIDTH,htrack/2.,fill=line_col) # track axis
-            y1,y2 = (0+feat_pad,feat_thk+feat_pad)
+
+    def draw_labels(self):
+        for n,name in enumerate(self.names):
+            l = tk.Label(self.root,text=self.names[n],bd=0,highlightthickness=0,bg=self.bg,padx=5)
+            self.wlabel = max(l.winfo_reqwidth(),self.wlabel)
+            l.grid(row=n,column=0)#,ipadx=4,ipady=4)
+        self.wcanvas = self.WIDTH-self.wlabel-self.rmargin
+
+    def draw_tracks(self):
+        feat_thk = self.htrack - 2*self.feat_pad
+        canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
+                  for _ in self.names]
+        wcanvas = self.wcanvas
+        for n,t in enumerate(self.tracks_content):
+            type = format(self.names[n])
+            c = canvas[n]
+            c.config(width=wcanvas)
+            c.grid(row=n,column=1)
+            if type == 'intervals':
+                c.create_line(0,self.htrack/2.,self.WIDTH,self.htrack/2.,fill=self.line_col) # track axis
+                y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
+                for k,feat in enumerate(t):
+                    x1,x2,g = (feat[0],feat[1],feat[2])
+                    x1 = self.bp2px(x1,wcanvas,self.reg_bp)
+                    x2 = self.bp2px(x2,wcanvas,self.reg_bp)
+                    c.create_rectangle(x1,y1,x2,y2, fill=self.feat_col)
+            elif type == 'density':
+                if t: top_bp = max(float(x[2]) for x in t) # highest score
+                c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # track axis
+                for k,feat in enumerate(t):
+                    x1,x2,s = (feat[0],feat[1],feat[2])
+                    x1 = self.bp2px(x1,wcanvas,self.reg_bp)
+                    x2 = self.bp2px(x2,wcanvas,self.reg_bp)
+                    s = self.bp2px(s,self.htrack,top_bp)
+                    c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.feat_col)
+
+    def draw_margin(self):
+        # Add a blank frame on the right as a margin
+        for n in range(len(self.names)):
+            w = tk.Frame(width=self.rmargin,height=self.htrack,bg=self.bg)
+            w.grid(row=n,column=2)
+
+    def draw_axis(self):
+        self.minpos = self.maxpos
+        if self.nbp: self.maxpos = self.ntimes*self.nbp
+        elif self.nfeat: self.maxpos = self.reg_bp
+        min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
+        min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
+        c = tk.Canvas(self.root,width=self.wcanvas,height=2*self.htrack,bd=0,
+                      bg=self.canvas_bg,highlightthickness=0)
+        c.grid(row=len(self.names)+1,column=1)
+        pad = c.winfo_reqheight()/2.
+        c.create_line(0,pad,self.WIDTH,pad,fill=self.line_col)  # axis
+        # Ticks & labels
+        for n,t in enumerate(self.tracks_content):
             for k,feat in enumerate(t):
-                x1,x2,g = (feat[0],feat[1],feat[2])
-                x1 = _bp2px(x1,wcanvas,reg_bp)
-                x2 = _bp2px(x2,wcanvas,reg_bp)
-                c.create_rectangle(x1,y1,x2,y2, fill=feat_col)
-        elif type == 'density':
-            if t: top_bp = max(float(x[2]) for x in t) # highest score
-            c.create_line(0,htrack-1,WIN_WIDTH,htrack-1,fill=line_col) # track axis
-            for k,feat in enumerate(t):
-                x1,x2,s = (feat[0],feat[1],feat[2])
-                x1 = _bp2px(x1,wcanvas,reg_bp)
-                x2 = _bp2px(x2,wcanvas,reg_bp)
-                s = _bp2px(s,htrack,top_bp)
-                c.create_rectangle(x1,htrack-1,x2,htrack-s+5,fill=feat_col)
-    # Add a blank frame on the right as a margin
-    for n in range(len(names)):
-        w = tk.Frame(width=rmargin,height=htrack,bg=bg)
-        w.grid(row=n,column=2)
-    # Axis
-    minpos = maxpos
-    if nbp: maxpos = ntimes*nbp
-    elif nfeat: maxpos = reg_bp
-    min_label = tk.Label(text=str(minpos),bd=0,bg=bg,anchor='e')
-    min_label.grid(row=n+1,column=0,sticky='e',padx=5)
-    c = tk.Canvas(root,width=wcanvas,height=2*htrack,bd=0,bg=canvas_bg,highlightthickness=0)
-    c.grid(row=n+1,column=1)
-    pad = c.winfo_reqheight()/2.
-    c.create_line(0,pad,WIN_WIDTH,pad,fill=line_col)  # axis
-    # Ticks & labels
-    for n,t in enumerate(tracks_content):
-        for k,feat in enumerate(t):
-            f1,f2 = (feat[0],feat[1])
-            x1 = _bp2px(f1,wcanvas,reg_bp)
-            x2 = _bp2px(f2,wcanvas,reg_bp)
-            c.create_line(x1,pad,x1,pad-5,fill=line_col)
-            c.create_line(x2,pad,x2,pad+5,fill=line_col)
-            if nbp:
-                f1 = feat[0]+(ntimes-1)*nbp
-                f2 = feat[1]+(ntimes-1)*nbp
-            if f1!=minpos and f1!=maxpos:
-                c.create_text(x1,pad-5,text=str(f1),anchor='s')
-            if f2!=minpos and f2!=maxpos:
-                c.create_text(x2,pad+5,text=str(f2),anchor='n')
-    max_label = tk.Label(text=str(maxpos),bd=0,bg=bg,anchor='w')
-    max_label.grid(row=n+1,column=2,sticky='w',padx=5)
-    root.wm_attributes("-topmost", 1) # makes the window appear on top
-    return root,maxpos
+                f1,f2 = (feat[0],feat[1])
+                x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
+                x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
+                c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
+                c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
+                if self.nbp:
+                    f1 = feat[0]+(self.ntimes-1)*self.nbp
+                    f2 = feat[1]+(self.ntimes-1)*self.nbp
+                if f1!=self.minpos and f1!=self.maxpos:
+                    c.create_text(x1,pad-5,text=str(f1),anchor='s')
+                if f2!=self.minpos and f2!=self.maxpos:
+                    c.create_text(x2,pad+5,text=str(f2),anchor='n')
+        max_label = tk.Label(text=str(self.maxpos),bd=0,bg=self.bg,anchor='w')
+        max_label.grid(row=len(self.names)+1,column=2,sticky='w',padx=5)
+
+    def draw(self):
+        """Create a new window and draw from the *tracks_content* coordinates
+           (of the form [[(1,2,n),(3,4,n)], [(3,5,n),(4,6,n)],...],
+           where `n` is either a name or a score)."""
+        def keyboard(event):
+            print event.keysym
+            if event.keysym == 'Escape':
+                self.root.destroy()
+                sys.exit(0)
+            elif event.keysym == 'space':
+                print self.root
+                self.root.quit()
+            elif event.keysym == 'Left':
+                pass # backwards??
+            elif event.keysym == 'Right':
+                pass
+        self.root.bind("<Key>", keyboard)
+        self.root.config(bg=self.bg)
+        if self.geometry: # keep previous position of the window
+            self.geometry = '+'.join(['']+self.geometry.split('+')[1:]) # "+70+27"
+            self.root.geometry(self.geometry)
+        self.reg_bp = max(x[1] for t in self.tracks_content for x in t) # whole region size in bp
+        self.reg_bp = max(self.reg_bp,self.nbp)
+        self.draw_labels()
+        self.draw_tracks()
+        self.draw_margin()
+        self.draw_axis()
+        self.root.wm_attributes("-topmost", 1) # makes the window appear on top
+        #self.root.mainloop()
 
 def gless(trackList, nfeat=None, nbp=None, sel=None):
     """Main controller function after option parsing."""
@@ -228,18 +258,17 @@ def gless(trackList, nfeat=None, nbp=None, sel=None):
     ntimes = 1 # Number of times spacebar is hit
     maxpos = 0 # Last biggest coordinate
     geometry = None
+    drawer = Drawer(names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos)
     while True:
         if needtodraw:
-            root,maxpos = draw(names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos)
-            geometry = root.geometry()
             needtodraw = False
+            drawer.draw()
             ntimes += 1
         key = raw_input()
         if key == '': sys.exit(0) # "Enter" pressed
         elif key == ' ':
             try:
-                tracks_content = tracks.next()
-                root.destroy()
+                drawer.tracks_content = tracks.next()
                 needtodraw = True
             except StopIteration: print "End of file."
 
@@ -270,10 +299,9 @@ if __name__ == '__main__':
 #root.focus_set()
 #print c.winfo_reqheight(), c.winfo_reqwidth()
 #print c.winfo_width(), c.winfo_height()
-#root.mainloop()
 #print 'Toyield',str(toyield)
 #print 'Toyield', [[(x[0]+(k-1)*nbp,x[1]+(k-1)*nbp) for x in t] for t in toyield]
 #bg = "#%02x%02x%02x" % (255, 255, 224) #beige background
 #print "Window", str((k-1)*nbp)+'-'+str(k*nbp)
-        #c.create_line(0,0,0,htrack,fill="grey") # separator label|canvas
+        #c.create_line(0,0,0,self.htrack,fill="grey") # separator label|canvas
     #c.create_line(0,0,0,2*pad,fill=line_col)         # separator
