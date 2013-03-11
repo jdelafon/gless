@@ -127,8 +127,8 @@ class Drawer:
         self.maxpos = maxpos
         self.minpos = 0
         # Geometry
-        self.geometry = geometry
         self.root = tk.Tk()
+        self.geometry = geometry
         self.WIDTH = 800
         self.htrack = 30
         self.rmargin = 100
@@ -141,6 +141,8 @@ class Drawer:
         self.canvas_bg = "white"
         self.feat_col = "blue"
         self.line_col = "black"
+        # Events
+        self.keydown = ''
 
     def bp2px(self,y,wwidth,reg_bp):
         try: return y*wwidth/reg_bp
@@ -221,12 +223,12 @@ class Drawer:
            (of the form [[(1,2,n),(3,4,n)], [(3,5,n),(4,6,n)],...],
            where `n` is either a name or a score)."""
         def keyboard(event):
-            print event.keysym
             if event.keysym == 'Escape':
+                self.keydown = chr(27)
                 self.root.destroy()
                 sys.exit(0)
             elif event.keysym == 'space':
-                print self.root
+                self.keydown = ' '
                 self.root.quit()
             elif event.keysym == 'Left':
                 pass # backwards??
@@ -244,7 +246,7 @@ class Drawer:
         self.draw_margin()
         self.draw_axis()
         self.root.wm_attributes("-topmost", 1) # makes the window appear on top
-        #self.root.mainloop()
+        self.root.mainloop()
 
 def gless(trackList, nfeat=None, nbp=None, sel=None):
     """Main controller function after option parsing."""
@@ -264,13 +266,17 @@ def gless(trackList, nfeat=None, nbp=None, sel=None):
             needtodraw = False
             drawer.draw()
             ntimes += 1
-        key = raw_input()
-        if key == '': sys.exit(0) # "Enter" pressed
-        elif key == ' ':
+        if drawer.keydown == chr(27): sys.exit(0) # "Enter" pressed
+        elif drawer.keydown == ' ':
             try:
                 drawer.tracks_content = tracks.next()
+                for w in drawer.root.children.values(): # Clear the window
+                    w.destroy()
                 needtodraw = True
-            except StopIteration: print "End of file."
+            except StopIteration:
+                print "End of file."
+                drawer.draw()
+                tracks = read10(trackList,nfeat,nbp,sel)
 
 def main():
     parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
