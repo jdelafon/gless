@@ -5,6 +5,7 @@ import argparse,re
 #os.chmod(fuckinfile,0o777)
 #os.remove(fuckinfile) # bug on osx
 
+###############################################################################
 
 class Parser(object):
     """A replacement for btrack when bbcflib is not found, able to parse
@@ -12,6 +13,7 @@ class Parser(object):
     def __init__(self,filename):
         self.path = os.path.abspath(filename)
         self.format = os.path.splitext(filename)[1][1:]
+        self.fields = ['chr','start','end','other']
     def read(self,fields=None,selection=None):
         with open(self.filehandle) as f:
             for line in f:
@@ -35,11 +37,18 @@ try:
 except ImportError:
     track = Parser
 
+###############################################################################
 
 class Reader(object):
-    def __init__(self,tracks):
+    def __init__(self,tracks,nfeat,nbp,sel):
         self.tracks = tracks
-        print "init"
+        self.sel = self.parse_selection(sel)
+        if nbp:
+            self.nbp = nbp
+            self.nfeat = None
+        elif nfeat:
+            self.nfeat = nfeat
+            self.nbp = None
 
     def parse_selection(self,sel):
         if not sel: return
@@ -51,70 +60,76 @@ class Reader(object):
             return {'chr':sel}
         else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
 
-    def read(self,tracks,nfeat,nbp,sel):
+    def read_nfeat(self,streams):
+        available_streams = range(len(streams))
+        current = [[s.next(),k] for k,s in enumerate(streams)]
+        sortkey = lambda x:x[0][0]
+        # Repeat & yield each time the function is called
+        while available_streams:
+            toyield = [[] for _ in streams]
+            len_toyield = 0
+            # Load *nfeat* in *toyield*
+            while len_toyield < self.nfeat and current:
+                current.sort(key=sortkey)
+                min_idx = current[0][-1]
+                toyield[min_idx].append(current.pop(0)[0])
+                len_toyield += 1
+                try: current.append([streams[min_idx].next(),min_idx])
+                except StopIteration:
+                    try: available_streams.pop(min_idx)
+                    except IndexError: continue
+            # Add feats that go partially beyond
+            if any(toyield):
+                maxpos = max(x[-1][1] for x in toyield if x)
+                for n,x in enumerate(current):
+                    if x[0][0] < maxpos:
+                        toyield[x[-1]].append((x[0][0],min(x[0][1],maxpos),x[0][2]))
+                        current[n][0] = [min(x[0][1],maxpos),x[0][1],x[0][2]]
+                yield toyield
+            else: break
+
+    def read_nbp(self,streams):
+        available_streams = range(len(streams))
+        nbp = self.nbp
+        current = [s.next() for k,s in enumerate(streams)]
+        # Repeat & yield each time the function is called
+        k = 0 # number of times called
+        while available_streams:
+            k += 1
+            toyield = [[] for _ in streams]
+            toremove = []
+            # Load items within *nbp* in *toyield*
+            for n in available_streams:
+                while current[n]:
+                    x = current[n]
+                    if x[1] <= k*nbp:
+                        toyield[n].append((x[0]-(k-1)*nbp,x[1]-(k-1)*nbp,x[2]))
+                        try: current[n] = streams[n].next()
+                        except StopIteration:
+                            current[n] = None
+                            toremove.append(n)
+                    elif x[0] < k*nbp:
+                        toyield[n].append((x[0]-(k-1)*nbp,nbp,x[2]))
+                        current[n] = (k*nbp,x[1],x[2])
+                    else: break
+            for n in toremove: available_streams.remove(n)
+            if any(toyield):
+                yield toyield
+            else:
+                yield [[(0,0,'0')] for _ in streams]
+
+    def read(self):
         """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6),n]] with either the *nfeat*
            next items, or all next items within an *nbp* window. `n` is a name or a score."""
-        #sel = 'chr1'
-        sel = self.parse_selection(sel)
-        streams = [t.read(fields=t.fields[1:4],selection=sel) for t in tracks]
-        available_streams = range(len(streams))
-        if nbp: nfeat = None
-        elif nfeat: nbp = None
-        if nfeat:
-            current = [[s.next(),k] for k,s in enumerate(streams)]
-            sortkey = lambda x:x[0][0]
-            # Repeat each time the function is called
-            while available_streams:
-                toyield = [[] for _ in streams]
-                len_toyield = 0
-                # Yield *nfeat* items
-                while len_toyield < nfeat and current:
-                    current.sort(key=sortkey)
-                    min_idx = current[0][-1]
-                    toyield[min_idx].append(current.pop(0)[0])
-                    len_toyield += 1
-                    try: current.append([streams[min_idx].next(),min_idx])
-                    except StopIteration:
-                        try: available_streams.pop(min_idx)
-                        except IndexError: continue
-                # Add feats that go partially beyond
-                if any(toyield):
-                    maxpos = max(x[-1][1] for x in toyield if x)
-                    for n,x in enumerate(current):
-                        if x[0][0] < maxpos:
-                            toyield[x[-1]].append((x[0][0],min(x[0][1],maxpos),x[0][2]))
-                            current[n][0] = [min(x[0][1],maxpos),x[0][1],x[0][2]]
-                    yield toyield
-                else: break
-        elif nbp:
-            current = [s.next() for k,s in enumerate(streams)]
-            sortkey = lambda x:x[0][0]
-            # Repeat each time the function is called
-            k = 0 # number of times called
-            while available_streams:
-                k += 1
-                toyield = [[] for _ in streams]
-                toremove = []
-                # Load items within *nbp* in *toyield*
-                for n in available_streams:
-                    while current[n]:
-                        x = current[n]
-                        if x[1] <= k*nbp:
-                            toyield[n].append((x[0]-(k-1)*nbp,x[1]-(k-1)*nbp,x[2]))
-                            try: current[n] = streams[n].next()
-                            except StopIteration:
-                                current[n] = None
-                                toremove.append(n)
-                        elif x[0] < k*nbp:
-                            toyield[n].append((x[0]-(k-1)*nbp,nbp,x[2]))
-                            current[n] = (k*nbp,x[1],x[2])
-                        else: break
-                for n in toremove: available_streams.remove(n)
-                if any(toyield):
-                    yield toyield
-                else:
-                    yield [[(0,0,'0')] for _ in streams]
+        streams = [t.read(fields=t.fields[1:4]) for t in self.tracks]
+        print streams
+        if self.nfeat:
+            content = self.read_nfeat(streams)
+        elif self.nbp:
+            content = self.read_nbp(streams)
+        return content
 
+###############################################################################
 
 class Drawer(object):
     def __init__(self,names,types,content,nfeat,nbp):
@@ -245,6 +260,7 @@ class Drawer(object):
         self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
 
+###############################################################################
 
 class Gless(object):
     def __init__(self,trackList,nfeat,nbp,sel):
@@ -255,7 +271,7 @@ class Gless(object):
         self.nfeat = nfeat
         self.nbp = nbp
         self.sel = sel
-        self.reader = Reader(self.tracks)
+        self.reader = Reader(self.tracks,self.nfeat,self.nbp,self.sel)
 
     def get_type(self,filename):
         """Return whether it is a track with 'intervals' or a 'density'."""
@@ -267,7 +283,7 @@ class Gless(object):
 
     def __call__(self):
         """Main controller function."""
-        stream = self.reader.read(self.tracks,self.nfeat,self.nbp,self.sel)
+        stream = self.reader.read()
         try: content = stream.next()
         except StopIteration:
             print "Nothing to show"
@@ -282,7 +298,7 @@ class Gless(object):
             if drawer.keydown == chr(27): sys.exit(0) # "Enter" pressed
             elif drawer.keydown == ' ':
                 try:
-                    drawer.content = stream.next()
+                    drawer.content = stream.next() # Load next data
                     for w in drawer.root.children.values(): # Clear the window
                         w.destroy()
                     needtodraw = True
@@ -290,7 +306,9 @@ class Gless(object):
                     print "End of file."
                     drawer.maxpos = drawer.minpos = 0
                     drawer.draw()
-                    stream = self.reader.read(self.tracks,self.nfeat,self.nbp,self.sel)
+                    stream = self.reader.read()
+
+###############################################################################
 
 def main():
     parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
