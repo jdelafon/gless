@@ -115,16 +115,16 @@ def read10(trackList,nfeat,nbp,sel):
             if any(toyield):
                 yield toyield
             else:
-                yield [[(0,0,'')] for _ in streams]
+                yield [[(0,0,'0')] for _ in streams]
 
 class Drawer:
-    def __init__(self,names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos):
+    def __init__(self,names,tracks_content,geometry,nfeat,nbp):
         self.names = names
         self.tracks_content = tracks_content
         self.nfeat = nfeat
         self.nbp = nbp
-        self.ntimes = ntimes
-        self.maxpos = maxpos
+        self.ntimes = 1
+        self.maxpos = 0
         self.minpos = 0
         # Geometry
         self.root = tk.Tk()
@@ -166,6 +166,7 @@ class Drawer:
             c.config(width=wcanvas)
             c.grid(row=n,column=1)
             if type == 'intervals':
+                self.feat_col = "blue"
                 c.create_line(0,self.htrack/2.,self.WIDTH,self.htrack/2.,fill=self.line_col) # track axis
                 y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
                 for k,feat in enumerate(t):
@@ -174,13 +175,14 @@ class Drawer:
                     x2 = self.bp2px(x2,wcanvas,self.reg_bp)
                     c.create_rectangle(x1,y1,x2,y2, fill=self.feat_col)
             elif type == 'density':
+                self.feat_col = "green"
                 if t: top_bp = max(float(x[2]) for x in t) # highest score
                 c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # track axis
                 for k,feat in enumerate(t):
                     x1,x2,s = (feat[0],feat[1],feat[2])
                     x1 = self.bp2px(x1,wcanvas,self.reg_bp)
                     x2 = self.bp2px(x2,wcanvas,self.reg_bp)
-                    s = self.bp2px(s,self.htrack,top_bp)
+                    s = self.bp2px(float(s),self.htrack,top_bp)
                     c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.feat_col)
 
     def draw_margin(self):
@@ -193,14 +195,14 @@ class Drawer:
         self.minpos = self.maxpos
         if self.nbp: self.maxpos = self.ntimes*self.nbp
         elif self.nfeat: self.maxpos = self.reg_bp
-        min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
-        min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
         c = tk.Canvas(self.root,width=self.wcanvas,height=2*self.htrack,bd=0,
                       bg=self.canvas_bg,highlightthickness=0)
         c.grid(row=len(self.names)+1,column=1)
         pad = c.winfo_reqheight()/2.
         c.create_line(0,pad,self.WIDTH,pad,fill=self.line_col)  # axis
         # Ticks & labels
+        min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
+        min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
         for n,t in enumerate(self.tracks_content):
             for k,feat in enumerate(t):
                 f1,f2 = (feat[0],feat[1])
@@ -245,11 +247,11 @@ class Drawer:
         self.draw_tracks()
         self.draw_margin()
         self.draw_axis()
-        self.root.wm_attributes("-topmost", 1) # makes the window appear on top
+        self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
 
 def gless(trackList, nfeat=None, nbp=None, sel=None):
-    """Main controller function after option parsing."""
+    """Main controller function."""
     names = [os.path.basename(t) for t in trackList]
     tracks = read10(trackList,nfeat,nbp,sel)
     try: tracks_content = tracks.next()
@@ -257,15 +259,13 @@ def gless(trackList, nfeat=None, nbp=None, sel=None):
         print "Nothing to show"
         sys.exit(0)
     needtodraw = True
-    ntimes = 1 # Number of times spacebar is hit
-    maxpos = 0 # Last biggest coordinate
     geometry = None
-    drawer = Drawer(names,tracks_content,geometry,nfeat,nbp,ntimes,maxpos)
+    drawer = Drawer(names,tracks_content,geometry,nfeat,nbp)
     while True:
         if needtodraw:
             needtodraw = False
             drawer.draw()
-            ntimes += 1
+            drawer.ntimes += 1
         if drawer.keydown == chr(27): sys.exit(0) # "Enter" pressed
         elif drawer.keydown == ' ':
             try:
@@ -275,6 +275,7 @@ def gless(trackList, nfeat=None, nbp=None, sel=None):
                 needtodraw = True
             except StopIteration:
                 print "End of file."
+                drawer.maxpos = drawer.minpos = 0
                 drawer.draw()
                 tracks = read10(trackList,nfeat,nbp,sel)
 
@@ -298,7 +299,7 @@ def main():
 if __name__ == '__main__':
     sys.exit(main())
 
-# python gless.py -n 12 testing_files/test1.bed testing_files/test2.bed testing_files/yeast_genes.bed
+# python gless.py -b 20 testing_files/test1.bed testing_files/test2.bed testing_files/test1.bedgraph testing_files/test2.bedgraph testing_files/yeast_genes.bed
 
 
 #trackList = ['testing_files/test1.bed','testing_files/test2.bed']
