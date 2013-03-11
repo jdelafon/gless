@@ -152,19 +152,18 @@ class Drawer:
         feat_thk = self.htrack - 2*self.feat_pad
         canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
                   for _ in self.names]
-        wcanvas = self.wcanvas
         for n,t in enumerate(self.tracks_content):
             type = self.formats[n]
             c = canvas[n]
-            c.config(width=wcanvas)
+            c.config(width=self.wcanvas)
             c.grid(row=n,column=1)
             if type == 'intervals':
                 c.create_line(0,self.htrack/2.,self.WIDTH,self.htrack/2.,fill=self.line_col) # track axis
                 y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
                 for k,feat in enumerate(t):
                     f1,f2,g = (feat[0],feat[1],feat[2])
-                    x1 = self.bp2px(f1,wcanvas,self.reg_bp)
-                    x2 = self.bp2px(f2,wcanvas,self.reg_bp)
+                    x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
                     if f1 == 0: x1-=1 # no border
                     c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
             elif type == 'density':
@@ -172,8 +171,8 @@ class Drawer:
                 c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # track axis
                 for k,feat in enumerate(t):
                     f1,f2,s = (feat[0],feat[1],feat[2])
-                    x1 = self.bp2px(f1,wcanvas,self.reg_bp)
-                    x2 = self.bp2px(f2,wcanvas,self.reg_bp)
+                    x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
                     s = self.bp2px(float(s),self.htrack,top_bp)
                     if f1 == 0: x1-=1
                     c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
