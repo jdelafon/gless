@@ -5,11 +5,12 @@ import argparse,re
 #os.chmod(fuckinfile,0o777)
 #os.remove(fuckinfile) # bug on osx
 
-class Parse:
+
+class Parser(object):
     """A replacement for btrack when bbcflib is not found, able to parse
        bed and bedGraph formats only."""
     def __init__(self,filename):
-        self.filehandle = os.path.abspath(filename)
+        self.path = os.path.abspath(filename)
         self.format = os.path.splitext(filename)[1][1:]
     def read(self,fields=None,selection=None):
         with open(self.filehandle) as f:
@@ -23,97 +24,103 @@ class Parse:
                                       "Only 'bed' and 'bedGraph' formats available "
                                       "(got '%s')." % os.path.basename(self.filehandle)))
                 if selection:
-                    if selection['chr'] != chr \
+                    if chr != selection['chr'] \
                        or not selection['start'][0] < start < selection['start'][1] \
                        or not selection['end'][0] < start < selection['end'][1]:
-                        break
-                yield (start,end)+tuple(line[3:])
+                        continue
+                yield tuple(line)
 try:
     from bbcflib.btrack import track
     assert track
 except ImportError:
-    track = Parse
+    track = Parser
 
-def parse_selection(sel):
-    if not sel: return
-    elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
-        chr,coord = sel.split(':')
-        st,en = coord.split('-')
-        return {'chr':chr,'start':(int(st),int(en)),'end':(int(st),int(en))}
-    elif re.search('^chr[0-9XY]*$',sel):
-        return {'chr':sel}
-    else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
 
-def read10(trackList,nfeat,nbp,sel):
-    """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6),n]] with either the *nfeat*
-       next items, or all next items within an *nbp* window. `n` is a name or a score."""
-    #sel = 'chr1'
-    tracks = [track(t) for t in trackList]
-    sel = parse_selection(sel)
-    streams = [t.read(fields=t.fields[1:4],selection=sel) for t in tracks]
-    available_streams = range(len(streams))
-    if nbp: nfeat = None
-    elif nfeat: nbp = None
-    if nfeat:
-        current = [[s.next(),k] for k,s in enumerate(streams)]
-        sortkey = lambda x:x[0][0]
-        # Repeat each time the function is called
-        while available_streams:
-            toyield = [[] for _ in streams]
-            len_toyield = 0
-            # Yield *nfeat* items
-            while len_toyield < nfeat and current:
-                current.sort(key=sortkey)
-                min_idx = current[0][-1]
-                toyield[min_idx].append(current.pop(0)[0])
-                len_toyield += 1
-                try: current.append([streams[min_idx].next(),min_idx])
-                except StopIteration:
-                    try: available_streams.pop(min_idx)
-                    except IndexError: continue
-            # Add feats that go partially beyond
-            if any(toyield):
-                maxpos = max(x[-1][1] for x in toyield if x)
-                for n,x in enumerate(current):
-                    if x[0][0] < maxpos:
-                        toyield[x[-1]].append((x[0][0],min(x[0][1],maxpos),x[0][2]))
-                        current[n][0] = [min(x[0][1],maxpos),x[0][1],x[0][2]]
-                yield toyield
-            else: break
-    elif nbp:
-        current = [s.next() for k,s in enumerate(streams)]
-        sortkey = lambda x:x[0][0]
-        # Repeat each time the function is called
-        k = 0 # number of times called
-        while available_streams:
-            k += 1
-            toyield = [[] for _ in streams]
-            toremove = []
-            # Load items within *nbp* in *toyield*
-            for n in available_streams:
-                while current[n]:
-                    x = current[n]
-                    if x[1] <= k*nbp:
-                        toyield[n].append((x[0]-(k-1)*nbp,x[1]-(k-1)*nbp,x[2]))
-                        try: current[n] = streams[n].next()
-                        except StopIteration:
-                            current[n] = None
-                            toremove.append(n)
-                    elif x[0] < k*nbp:
-                        toyield[n].append((x[0]-(k-1)*nbp,nbp,x[2]))
-                        current[n] = (k*nbp,x[1],x[2])
-                    else: break
-            for n in toremove: available_streams.remove(n)
-            if any(toyield):
-                yield toyield
-            else:
-                yield [[(0,0,'0')] for _ in streams]
+class Reader(object):
+    def __init__(self,tracks):
+        self.tracks = tracks
+        print "init"
 
-class Drawer:
-    def __init__(self,names,formats,tracks_content,geometry,nfeat,nbp):
+    def parse_selection(self,sel):
+        if not sel: return
+        elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
+            chr,coord = sel.split(':')
+            st,en = coord.split('-')
+            return {'chr':chr,'start':(int(st),int(en)),'end':(int(st),int(en))}
+        elif re.search('^chr[0-9XY]*$',sel):
+            return {'chr':sel}
+        else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
+
+    def read(self,tracks,nfeat,nbp,sel):
+        """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6),n]] with either the *nfeat*
+           next items, or all next items within an *nbp* window. `n` is a name or a score."""
+        #sel = 'chr1'
+        sel = self.parse_selection(sel)
+        streams = [t.read(fields=t.fields[1:4],selection=sel) for t in tracks]
+        available_streams = range(len(streams))
+        if nbp: nfeat = None
+        elif nfeat: nbp = None
+        if nfeat:
+            current = [[s.next(),k] for k,s in enumerate(streams)]
+            sortkey = lambda x:x[0][0]
+            # Repeat each time the function is called
+            while available_streams:
+                toyield = [[] for _ in streams]
+                len_toyield = 0
+                # Yield *nfeat* items
+                while len_toyield < nfeat and current:
+                    current.sort(key=sortkey)
+                    min_idx = current[0][-1]
+                    toyield[min_idx].append(current.pop(0)[0])
+                    len_toyield += 1
+                    try: current.append([streams[min_idx].next(),min_idx])
+                    except StopIteration:
+                        try: available_streams.pop(min_idx)
+                        except IndexError: continue
+                # Add feats that go partially beyond
+                if any(toyield):
+                    maxpos = max(x[-1][1] for x in toyield if x)
+                    for n,x in enumerate(current):
+                        if x[0][0] < maxpos:
+                            toyield[x[-1]].append((x[0][0],min(x[0][1],maxpos),x[0][2]))
+                            current[n][0] = [min(x[0][1],maxpos),x[0][1],x[0][2]]
+                    yield toyield
+                else: break
+        elif nbp:
+            current = [s.next() for k,s in enumerate(streams)]
+            sortkey = lambda x:x[0][0]
+            # Repeat each time the function is called
+            k = 0 # number of times called
+            while available_streams:
+                k += 1
+                toyield = [[] for _ in streams]
+                toremove = []
+                # Load items within *nbp* in *toyield*
+                for n in available_streams:
+                    while current[n]:
+                        x = current[n]
+                        if x[1] <= k*nbp:
+                            toyield[n].append((x[0]-(k-1)*nbp,x[1]-(k-1)*nbp,x[2]))
+                            try: current[n] = streams[n].next()
+                            except StopIteration:
+                                current[n] = None
+                                toremove.append(n)
+                        elif x[0] < k*nbp:
+                            toyield[n].append((x[0]-(k-1)*nbp,nbp,x[2]))
+                            current[n] = (k*nbp,x[1],x[2])
+                        else: break
+                for n in toremove: available_streams.remove(n)
+                if any(toyield):
+                    yield toyield
+                else:
+                    yield [[(0,0,'0')] for _ in streams]
+
+
+class Drawer(object):
+    def __init__(self,names,types,content,nfeat,nbp):
         self.names = names
-        self.formats = formats
-        self.tracks_content = tracks_content
+        self.types = types
+        self.content = content
         self.nfeat = nfeat
         self.nbp = nbp
         self.ntimes = 1
@@ -122,7 +129,6 @@ class Drawer:
         self.keydown = ''
         # Geometry
         self.root = tk.Tk()
-        self.geometry = geometry
         self.WIDTH = 800
         self.htrack = 30
         self.rmargin = 100
@@ -152,8 +158,8 @@ class Drawer:
         feat_thk = self.htrack - 2*self.feat_pad
         canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
                   for _ in self.names]
-        for n,t in enumerate(self.tracks_content):
-            type = self.formats[n]
+        for n,t in enumerate(self.content):
+            type = self.types[n]
             c = canvas[n]
             c.config(width=self.wcanvas)
             c.grid(row=n,column=1)
@@ -195,7 +201,7 @@ class Drawer:
         # Ticks & labels
         min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
         min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
-        for n,t in enumerate(self.tracks_content):
+        for n,t in enumerate(self.content):
             for k,feat in enumerate(t):
                 f1,f2 = (feat[0],feat[1])
                 x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
@@ -213,7 +219,7 @@ class Drawer:
         max_label.grid(row=len(self.names)+1,column=2,sticky='w',padx=5)
 
     def draw(self):
-        """Create a new window and draw from the *tracks_content* coordinates
+        """Create a new window and draw from the *content* coordinates
            (of the form [[(1,2,n),(3,4,n)], [(3,5,n),(4,6,n)],...],
            where `n` is either a name or a score)."""
         def keyboard(event):
@@ -230,10 +236,7 @@ class Drawer:
                 pass
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
-        if self.geometry: # keep previous position of the window
-            self.geometry = '+'.join(['']+self.geometry.split('+')[1:]) # "+70+27"
-            self.root.geometry(self.geometry)
-        self.reg_bp = max(x[1] for t in self.tracks_content for x in t) # whole region size in bp
+        self.reg_bp = max(x[1] for t in self.content for x in t) # whole region size in bp
         self.reg_bp = max(self.reg_bp,self.nbp)
         self.draw_labels()
         self.draw_tracks()
@@ -242,43 +245,52 @@ class Drawer:
         self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
 
-def format(filename):
-    """Return whether it is a track with 'intervals' or a 'density'."""
-    with track(filename) as t:
-        if t.format.lower() in ['bed']:
-            return 'intervals'
-        elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
-            return 'density'
 
-def gless(trackList, nfeat=None, nbp=None, sel=None):
-    """Main controller function."""
-    names = [os.path.basename(t) for t in trackList]
-    formats = [format(t) for t in trackList]
-    tracks = read10(trackList,nfeat,nbp,sel)
-    try: tracks_content = tracks.next()
-    except StopIteration:
-        print "Nothing to show"
-        sys.exit(0)
-    needtodraw = True
-    geometry = None
-    drawer = Drawer(names,formats,tracks_content,geometry,nfeat,nbp)
-    while True:
-        if needtodraw:
-            needtodraw = False
-            drawer.draw()
-            drawer.ntimes += 1
-        if drawer.keydown == chr(27): sys.exit(0) # "Enter" pressed
-        elif drawer.keydown == ' ':
-            try:
-                drawer.tracks_content = tracks.next()
-                for w in drawer.root.children.values(): # Clear the window
-                    w.destroy()
-                needtodraw = True
-            except StopIteration:
-                print "End of file."
-                drawer.maxpos = drawer.minpos = 0
+class Gless(object):
+    def __init__(self,trackList,nfeat,nbp,sel):
+        self.trackList = trackList
+        self.names = [os.path.basename(t) for t in trackList]
+        self.types = [self.get_type(n) for n in self.names]
+        self.tracks = [track(t) for t in self.trackList]
+        self.nfeat = nfeat
+        self.nbp = nbp
+        self.sel = sel
+        self.reader = Reader(self.tracks)
+
+    def get_type(self,filename):
+        """Return whether it is a track with 'intervals' or a 'density'."""
+        with track(filename) as t:
+            if t.format.lower() in ['bed']:
+                return 'intervals'
+            elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
+                return 'density'
+
+    def __call__(self):
+        """Main controller function."""
+        stream = self.reader.read(self.tracks,self.nfeat,self.nbp,self.sel)
+        try: content = stream.next()
+        except StopIteration:
+            print "Nothing to show"
+            sys.exit(0)
+        needtodraw = True
+        drawer = Drawer(self.names,self.types,content,self.nfeat,self.nbp)
+        while True:
+            if needtodraw:
+                needtodraw = False
                 drawer.draw()
-                tracks = read10(trackList,nfeat,nbp,sel)
+                drawer.ntimes += 1
+            if drawer.keydown == chr(27): sys.exit(0) # "Enter" pressed
+            elif drawer.keydown == ' ':
+                try:
+                    drawer.content = stream.next()
+                    for w in drawer.root.children.values(): # Clear the window
+                        w.destroy()
+                    needtodraw = True
+                except StopIteration:
+                    print "End of file."
+                    drawer.maxpos = drawer.minpos = 0
+                    drawer.draw()
+                    stream = self.reader.read(self.tracks,self.nfeat,self.nbp,self.sel)
 
 def main():
     parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
@@ -295,7 +307,8 @@ def main():
     if args.nbp: args.nfeat = None
     elif args.nfeat and args.nfeat > 10000:
         print "Up to 10000 features permitted, got -n %s." % args.nfeat; sys.exit(1)
-    gless(trackList=args.file,nfeat=args.nfeat,nbp=args.nbp,sel=args.sel)
+    G = Gless(args.file,args.nfeat,args.nbp,args.sel)
+    G()
 
 if __name__ == '__main__':
     sys.exit(main())
@@ -313,3 +326,6 @@ if __name__ == '__main__':
 #print "Window", str((k-1)*nbp)+'-'+str(k*nbp)
         #c.create_line(0,0,0,self.htrack,fill="grey") # separator label|canvas
     #c.create_line(0,0,0,2*pad,fill=line_col)         # separator
+        #if self.geometry: # keep previous position of the window
+        #    self.geometry = '+'.join(['']+self.geometry.split('+')[1:]) # "+70+27"
+        #    self.root.geometry(self.geometry)
