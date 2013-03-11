@@ -34,14 +34,6 @@ try:
 except ImportError:
     track = Parse
 
-def format(filename):
-    """Return whether it is a track with 'intervals' or a 'density'."""
-    with track(filename) as t:
-        if t.format.lower() in ['bed']:
-            return 'intervals'
-        elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
-            return 'density'
-
 def parse_selection(sel):
     if not sel: return
     elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
@@ -118,14 +110,16 @@ def read10(trackList,nfeat,nbp,sel):
                 yield [[(0,0,'0')] for _ in streams]
 
 class Drawer:
-    def __init__(self,names,tracks_content,geometry,nfeat,nbp):
+    def __init__(self,names,formats,tracks_content,geometry,nfeat,nbp):
         self.names = names
+        self.formats = formats
         self.tracks_content = tracks_content
         self.nfeat = nfeat
         self.nbp = nbp
         self.ntimes = 1
         self.maxpos = 0
         self.minpos = 0
+        self.keydown = ''
         # Geometry
         self.root = tk.Tk()
         self.geometry = geometry
@@ -140,9 +134,8 @@ class Drawer:
         self.bg = "grey"
         self.canvas_bg = "white"
         self.feat_col = "blue"
+        self.dens_col = "green"
         self.line_col = "black"
-        # Events
-        self.keydown = ''
 
     def bp2px(self,y,wwidth,reg_bp):
         try: return y*wwidth/reg_bp
@@ -152,7 +145,7 @@ class Drawer:
         for n,name in enumerate(self.names):
             l = tk.Label(self.root,text=self.names[n],bd=0,highlightthickness=0,bg=self.bg,padx=5)
             self.wlabel = max(l.winfo_reqwidth(),self.wlabel)
-            l.grid(row=n,column=0)#,ipadx=4,ipady=4)
+            l.grid(row=n,column=0)
         self.wcanvas = self.WIDTH-self.wlabel-self.rmargin
 
     def draw_tracks(self):
@@ -161,29 +154,29 @@ class Drawer:
                   for _ in self.names]
         wcanvas = self.wcanvas
         for n,t in enumerate(self.tracks_content):
-            type = format(self.names[n])
+            type = self.formats[n]
             c = canvas[n]
             c.config(width=wcanvas)
             c.grid(row=n,column=1)
             if type == 'intervals':
-                self.feat_col = "blue"
                 c.create_line(0,self.htrack/2.,self.WIDTH,self.htrack/2.,fill=self.line_col) # track axis
                 y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
                 for k,feat in enumerate(t):
-                    x1,x2,g = (feat[0],feat[1],feat[2])
-                    x1 = self.bp2px(x1,wcanvas,self.reg_bp)
-                    x2 = self.bp2px(x2,wcanvas,self.reg_bp)
-                    c.create_rectangle(x1,y1,x2,y2, fill=self.feat_col)
+                    f1,f2,g = (feat[0],feat[1],feat[2])
+                    x1 = self.bp2px(f1,wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2,wcanvas,self.reg_bp)
+                    if f1 == 0: x1-=1 # no border
+                    c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
             elif type == 'density':
-                self.feat_col = "green"
                 if t: top_bp = max(float(x[2]) for x in t) # highest score
                 c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # track axis
                 for k,feat in enumerate(t):
-                    x1,x2,s = (feat[0],feat[1],feat[2])
-                    x1 = self.bp2px(x1,wcanvas,self.reg_bp)
-                    x2 = self.bp2px(x2,wcanvas,self.reg_bp)
+                    f1,f2,s = (feat[0],feat[1],feat[2])
+                    x1 = self.bp2px(f1,wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2,wcanvas,self.reg_bp)
                     s = self.bp2px(float(s),self.htrack,top_bp)
-                    c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.feat_col)
+                    if f1 == 0: x1-=1
+                    c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
 
     def draw_margin(self):
         # Add a blank frame on the right as a margin
@@ -250,9 +243,18 @@ class Drawer:
         self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
 
+def format(filename):
+    """Return whether it is a track with 'intervals' or a 'density'."""
+    with track(filename) as t:
+        if t.format.lower() in ['bed']:
+            return 'intervals'
+        elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
+            return 'density'
+
 def gless(trackList, nfeat=None, nbp=None, sel=None):
     """Main controller function."""
     names = [os.path.basename(t) for t in trackList]
+    formats = [format(t) for t in trackList]
     tracks = read10(trackList,nfeat,nbp,sel)
     try: tracks_content = tracks.next()
     except StopIteration:
@@ -260,7 +262,7 @@ def gless(trackList, nfeat=None, nbp=None, sel=None):
         sys.exit(0)
     needtodraw = True
     geometry = None
-    drawer = Drawer(names,tracks_content,geometry,nfeat,nbp)
+    drawer = Drawer(names,formats,tracks_content,geometry,nfeat,nbp)
     while True:
         if needtodraw:
             needtodraw = False
