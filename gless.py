@@ -119,10 +119,9 @@ class Reader(object):
                 yield [[(0,0,'0')] for _ in streams]
 
     def read(self):
-        """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6),n]] with either the *nfeat*
+        """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6,n)]] with either the *nfeat*
            next items, or all next items within an *nbp* window. `n` is a name or a score."""
         streams = [t.read(fields=t.fields[1:4]) for t in self.tracks]
-        print streams
         if self.nfeat:
             content = self.read_nfeat(streams)
         elif self.nbp:
@@ -205,7 +204,7 @@ class Drawer(object):
             w.grid(row=n,column=2)
 
     def draw_axis(self):
-        self.minpos = self.maxpos
+        self.minpos = self.maxpos if self.ntimes > 1 else 0
         if self.nbp: self.maxpos = self.ntimes*self.nbp
         elif self.nfeat: self.maxpos = self.reg_bp
         c = tk.Canvas(self.root,width=self.wcanvas,height=2*self.htrack,bd=0,
@@ -304,8 +303,8 @@ class Gless(object):
                     needtodraw = True
                 except StopIteration:
                     print "End of file."
-                    drawer.maxpos = drawer.minpos = 0
-                    drawer.draw()
+                    drawer.minpos = 0
+                    drawer.ntimes = 1
                     stream = self.reader.read()
 
 ###############################################################################
