@@ -87,6 +87,7 @@ class Reader(object):
         self.chr_change = False
         # Repeat & yield each time the function is called
         while available_streams:
+            self.chr_change = False
             toyield = [[] for _ in streams]
             len_toyield = 0
             # Load *nfeat* in *toyield*
@@ -106,18 +107,15 @@ class Reader(object):
                     try: available_streams.pop(min_idx)
                     except IndexError: continue
             if any(toyield):
-                if self.chr_change:
-                    self.chr_change = False
-                    yield toyield
                 # Add feats that go partially beyond
-                else:
+                if not self.chr_change:
                     maxpos = max(x[-1][1] for x in toyield if x)
                     for n,x in enumerate(self.buffer):
                         if x[0][1] < maxpos:
                             toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos),x[0][3]))
                             if x[0][2] != maxpos:
                                 self.buffer[n][0] = [x[0][0],min(x[0][2],maxpos),x[0][2],x[0][3]]
-                    yield toyield
+                yield toyield
             else: break
 
     def read_nbp(self,streams):
@@ -209,7 +207,7 @@ class Drawer(object):
             self.maxpos = max(t[-1][1] for t in content)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
-        print self.minpos, self.maxpos, self.ntimes
+        print 2, self.minpos, self.maxpos
         self.draw_labels()
         self.draw_tracks(content)
         self.draw_margin()
@@ -313,22 +311,16 @@ class Gless(object):
         except StopIteration:
             print "Nothing to show"
             sys.exit(0)
-        print "New content", content
         needtodraw = True
         while True:
             if needtodraw:
-                print "Draw!"
-                if self.reader.chr_change:
-                    print "NewChr", self.reader.chr
                 needtodraw = False
                 self.drawer.draw(content)
                 self.drawer.ntimes += 1
             if self.drawer.keydown == chr(27): sys.exit(0) # "Enter" pressed
             elif self.drawer.keydown == ' ':
                 self.reader.ntimes += 1
-                print ''
                 if self.reader.chr_change:
-                    print 333333
                     self.drawer.minpos = 0
                     self.drawer.maxpos = 0
                     self.drawer.ntimes = 0
@@ -340,7 +332,6 @@ class Gless(object):
                         w.destroy()
                     needtodraw = True
                 except StopIteration:
-                    print 222222
                     needtodraw = True
                     #self.drawer.draw(content)    # Stop showing the last frame
                     #stream = self.reader.read() # Return to the beginning
