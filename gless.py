@@ -40,7 +40,8 @@ except ImportError:
 
 ###############################################################################
 
-class Buffer(object):
+class Memory(object):
+    """Remembers what has already been read, so that one can go back."""
     def __init__(self):
         self.content = []
 
@@ -139,33 +140,30 @@ class Reader(object):
             maxpos = self.ntimes*self.nbp
             toyield = [[] for _ in streams]
             toremove = []
-            chr_change = self.chr_change
+            self.chr_change = False
+            chrom = [self.chr for _ in streams]
             # Load items within *nbp* in *toyield*
             for n in available_streams:
-                while self.buffer[n]:
-                    x = self.buffer[n]
-                    if x[2] <= maxpos:
-                        toyield[n].append((x[1],x[2],x[3]))
-                        try:
-                            self.buffer[n] = streams[n].next()
-                            chrom = self.buffer[n][0]
-                            if chrom != self.chr:
-                                print 1
-                                chr_change = True
-                                break
-                        except StopIteration:
-                            self.buffer[n] = None
-                            toremove.append(n)
-                    elif x[1] < maxpos:
-                        toyield[n].append((x[1],maxpos,x[3]))
-                        self.buffer[n] = (x[0],maxpos,x[2],x[3])
-                    else: break
-            if chr_change:
-                self.chr = chrom
-                self.chr_change = chr_change
+                x = self.buffer[n]
+                while x[0] == self.chr and x[2] <= maxpos:
+                    toyield[n].append((x[1],x[2],x[3]))
+                    try: x = streams[n].next()
+                    except StopIteration:
+                        toremove.append(n)
+                        self.buffer[n] = None
+                        break
+                if x[0] != self.chr:
+                    chrom[n] = x[0]
+                elif x[2] > maxpos and x[1] < maxpos:
+                    toyield[n].append((x[1],maxpos,x[3]))
+                    x = (x[0],maxpos,x[2],x[3])
+                self.buffer[n] = x
+            if all(chrom[n] != self.chr for n in available_streams):
+                self.chr = chrom[0]
+                self.chr_change = True
             for n in toremove: available_streams.remove(n)
             if any(toyield):
-                print toyield
+                #print "Toyield", self.chr, toyield
                 yield toyield
             else:
                 yield [[(0,0,'0')] for _ in streams]
@@ -380,6 +378,8 @@ class Gless(object):
                 self.load_next(stream) # fake
 
 ###############################################################################
+
+"""If no explicit selection, chromosomes are base on the first track."""
 
 def main():
     parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
