@@ -25,11 +25,12 @@ class Parser(object):
                     raise ValueError(("Library 'bbcflib' not found. "
                                       "Only 'bed' and 'bedGraph' formats available "
                                       "(got '%s')." % os.path.basename(self.filehandle)))
-                #if selection:
-                #    if chr != selection['chr'] \
-                #       or not selection['start'][0] < start < selection['start'][1] \
-                #       or not selection['end'][0] < start < selection['end'][1]:
-                #        continue
+                # Skip lines until selection requirements are fulfilled
+                if selection:
+                    if chr != selection['chr'] \
+                       or not selection['start'][0] < start < selection['start'][1] \
+                       or not selection['end'][0] < start < selection['end'][1]:
+                        continue
                 yield tuple(line)
 try:
     from bbcflib.btrack import track
@@ -217,7 +218,6 @@ class Drawer(object):
                 self.keydown = chr(127)
                 self.root.quit()
                 pass # Return to the beginning
-            else: return
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
         self.minpos = self.maxpos if self.ntimes > 0 else 0
@@ -228,7 +228,6 @@ class Drawer(object):
             self.maxpos = max(t[-1][1] for t in content if t)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
-        print "Minpos,maxpos:", self.minpos, self.maxpos
         self.draw_labels()
         self.draw_tracks(content)
         self.draw_margin()
