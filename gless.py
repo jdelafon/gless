@@ -213,7 +213,7 @@ class Drawer(object):
             self.maxpos = (self.ntimes+1)*self.nbp
             self.reg_bp = self.maxpos - self.minpos
         elif self.nfeat:
-            self.maxpos = max(t[-1][1] for t in content)
+            self.maxpos = max(t[-1][1] for t in content if t)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
         print "Minpos,maxpos:", self.minpos, self.maxpos
@@ -333,7 +333,6 @@ class Gless(object):
         self.needtodraw = True
         for w in self.drawer.root.children.values(): # Clear the window
             w.destroy()
-        print self.content
 
     def __call__(self):
         """Main controller function."""
@@ -392,11 +391,8 @@ if __name__ == '__main__':
 #root.focus_set()
 #print c.winfo_reqheight(), c.winfo_reqwidth()
 #print c.winfo_width(), c.winfo_height()
-#print 'Toyield',str(toyield)
-#print 'Toyield', [[(x[0]+(k-1)*nbp,x[1]+(k-1)*nbp) for x in t] for t in toyield]
 #bg = "#%02x%02x%02x" % (255, 255, 224) #beige background
-#print "Window", str((k-1)*nbp)+'-'+str(k*nbp)
-        #c.create_line(0,0,0,self.htrack,fill="grey") # separator label|canvas
+    #c.create_line(0,0,0,self.htrack,fill="grey") # separator label|canvas
     #c.create_line(0,0,0,2*pad,fill=line_col)         # separator
         #if self.geometry: # keep previous position of the window
         #    self.geometry = '+'.join(['']+self.geometry.split('+')[1:]) # "+70+27"
