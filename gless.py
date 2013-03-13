@@ -359,6 +359,10 @@ class Gless(object):
                 self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
                 stream = self.reader.read()
                 self.load_next(stream)
+            elif self.drawer.keydown == chr(37): # Left arrow pressed: shift left
+                self.load_next(stream) # fake
+            elif self.drawer.keydown == chr(39): # Right arrow pressed: shift right
+                self.load_next(stream) # fake
 
 
 ###############################################################################
