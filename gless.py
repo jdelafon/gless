@@ -162,6 +162,7 @@ class Reader(object):
                     else: break
             for n in toremove: available_streams.remove(n)
             if any(toyield):
+                print toyield
                 yield toyield
             else:
                 yield [[(0,0,'0')] for _ in streams]
@@ -260,9 +261,10 @@ class Drawer(object):
                 y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
                 for k,feat in enumerate(t):
                     f1,f2,g = (feat[0],feat[1],feat[2])
-                    x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
-                    x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
+                    x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                     if f1 == self.minpos: x1-=1 # no border
+                    print feat,x1,x2
                     c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
             elif type == 'density':
                 if t: top_bp = max(float(x[2]) for x in t) # highest score
@@ -290,8 +292,8 @@ class Drawer(object):
         for n,t in enumerate(content):
             for k,feat in enumerate(t):
                 f1,f2 = (feat[0],feat[1])
-                x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
-                x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
+                x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
+                x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                 c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
                 c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
                 if f1!=self.minpos and f1!=self.maxpos:
