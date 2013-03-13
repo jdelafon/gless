@@ -114,7 +114,7 @@ class Reader(object):
                         if x[0][1] < maxpos:
                             toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos),x[0][3]))
                             if x[0][2] != maxpos:
-                                self.buffer[n][0] = [x[0][0],min(x[0][2],maxpos),x[0][2],x[0][3]]
+                                self.buffer[n][0] = (x[0][0],min(x[0][2],maxpos),x[0][2],x[0][3])
                 yield toyield
             else: break
 
@@ -225,7 +225,7 @@ class Drawer(object):
         self.root.mainloop()
 
     def bp2px(self,x,wwidth,reg_bp):
-        try: return (x-self.minpos) * wwidth/reg_bp
+        try: return x * wwidth/reg_bp
         except ZeroDivisionError: return 0
 
     def draw_labels(self):
@@ -255,11 +255,11 @@ class Drawer(object):
                     c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
             elif type == 'density':
                 if t: top_bp = max(float(x[2]) for x in t) # highest score
-                c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # track baseline
+                c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # baseline
                 for k,feat in enumerate(t):
                     f1,f2,s = (feat[0],feat[1],feat[2])
-                    x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
-                    x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
+                    x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                     s = self.bp2px(float(s),self.htrack,top_bp)
                     if f1 == 0: x1-=1
                     c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
