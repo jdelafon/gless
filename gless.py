@@ -39,6 +39,18 @@ except ImportError:
 
 ###############################################################################
 
+class Buffer(object):
+    def __init__(self):
+        self.content = []
+
+    def load(self,content):
+        pass
+
+    def get(self,content):
+        pass
+
+###############################################################################
+
 class Reader(object):
     def __init__(self,trackList,nfeat,nbp,sel):
         self.tracks = [track(t) for t in trackList]
