@@ -40,9 +40,11 @@ except ImportError:
 ###############################################################################
 
 class Reader(object):
-    def __init__(self,tracks,nfeat,nbp,sel):
-        self.tracks = tracks
+    def __init__(self,trackList,nfeat,nbp,sel):
+        self.tracks = [track(t) for t in trackList]
         self.sel = self.parse_selection(sel)
+        self.chr = self.init_chr()
+        self.buffer = []
         if nbp:
             self.nbp = nbp
             self.nfeat = None
@@ -51,7 +53,7 @@ class Reader(object):
             self.nbp = None
 
     def parse_selection(self,sel):
-        if not sel: return
+        if not sel: return None
         elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
             chr,coord = sel.split(':')
             st,en = coord.split('-')
@@ -60,39 +62,69 @@ class Reader(object):
             return {'chr':sel}
         else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
 
+    def init_chr(self):
+        if self.sel: return
+        for t in self.tracks:
+            try: return t.read().next()[0]
+            except StopIteration: continue
+
+    def read(self):
+        """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6,n)]] with either the *nfeat*
+           next items, or all next items within an *nbp* window. `n` is a name or a score."""
+        streams = [t.read(fields=t.fields[:4]) for t in self.tracks]
+        if self.nfeat:
+            content = self.read_nfeat(streams)
+        elif self.nbp:
+            content = self.read_nbp(streams)
+        return content
+
     def read_nfeat(self,streams):
         available_streams = range(len(streams))
-        current = [[s.next(),k] for k,s in enumerate(streams)]
-        sortkey = lambda x:x[0][0]
+        self.buffer = [[s.next(),k] for k,s in enumerate(streams)]
+        sortkey = lambda x:(x[0][0],x[0][1])
+        newchr = False
         # Repeat & yield each time the function is called
         while available_streams:
             toyield = [[] for _ in streams]
             len_toyield = 0
             # Load *nfeat* in *toyield*
-            while len_toyield < self.nfeat and current:
-                current.sort(key=sortkey)
-                min_idx = current[0][-1]
-                toyield[min_idx].append(current.pop(0)[0])
+            while len_toyield < self.nfeat and self.buffer:
+                self.buffer.sort(key=sortkey)
+                min_idx = self.buffer[0][-1]
+                toyield[min_idx].append(self.buffer.pop(0)[0][1:])
                 len_toyield += 1
-                try: current.append([streams[min_idx].next(),min_idx])
+                try:
+                    self.buffer.append([streams[min_idx].next(),min_idx]) # read next item
+                    chrom = self.buffer[0][0][0]
+                    if chrom != self.chr:
+                        newchr = True
+                        self.chr = chrom
+                        break
                 except StopIteration:
                     try: available_streams.pop(min_idx)
                     except IndexError: continue
-            # Add feats that go partially beyond
             if any(toyield):
-                maxpos = max(x[-1][1] for x in toyield if x)
-                for n,x in enumerate(current):
-                    if x[0][0] < maxpos:
-                        toyield[x[-1]].append((x[0][0],min(x[0][1],maxpos),x[0][2]))
-                        current[n][0] = [min(x[0][1],maxpos),x[0][1],x[0][2]]
-                yield toyield
+                if newchr:
+                    newchr = False
+                    yield toyield
+                # Add feats that go partially beyond
+                else:
+                    maxpos = max(x[-1][1] for x in toyield if x)
+                    for n,x in enumerate(self.buffer):
+                        if x[0][1] < maxpos:
+                            toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos),x[0][3]))
+                            if x[0][2] != maxpos:
+                                self.buffer[n][0] = [x[0][0],min(x[0][2],maxpos),x[0][2],x[0][3]]
+                    #print "Toyield:",toyield
+                    yield toyield
             else: break
 
     def read_nbp(self,streams):
         available_streams = range(len(streams))
+        self.buffer = [s.next() for k,s in enumerate(streams)]
         nbp = self.nbp
-        current = [s.next() for k,s in enumerate(streams)]
         # Repeat & yield each time the function is called
+        newchr = False
         k = 0 # number of times called
         while available_streams:
             k += 1
@@ -100,41 +132,38 @@ class Reader(object):
             toremove = []
             # Load items within *nbp* in *toyield*
             for n in available_streams:
-                while current[n]:
-                    x = current[n]
-                    if x[1] <= k*nbp:
-                        toyield[n].append((x[0]-(k-1)*nbp,x[1]-(k-1)*nbp,x[2]))
-                        try: current[n] = streams[n].next()
+                while self.buffer[n]:
+                    x = self.buffer[n]
+                    if x[2] <= k*nbp:
+                        toyield[n].append((x[1],x[2],x[3]))
+                        try:
+                            self.buffer[n] = streams[n].next()
+                            chrom = self.buffer[n][0]
+                            if chrom != self.chr:
+                                newchr = True
+                                self.chr = chrom
+                                break
                         except StopIteration:
-                            current[n] = None
+                            self.buffer[n] = None
                             toremove.append(n)
-                    elif x[0] < k*nbp:
-                        toyield[n].append((x[0]-(k-1)*nbp,nbp,x[2]))
-                        current[n] = (k*nbp,x[1],x[2])
+                    elif x[1] < k*nbp:
+                        toyield[n].append((x[1],nbp,x[3]))
+                        self.buffer[n] = (x[0],k*nbp,x[2],x[3])
                     else: break
             for n in toremove: available_streams.remove(n)
+            if newchr:
+                newchr = False
             if any(toyield):
                 yield toyield
             else:
                 yield [[(0,0,'0')] for _ in streams]
 
-    def read(self):
-        """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6,n)]] with either the *nfeat*
-           next items, or all next items within an *nbp* window. `n` is a name or a score."""
-        streams = [t.read(fields=t.fields[1:4]) for t in self.tracks]
-        if self.nfeat:
-            content = self.read_nfeat(streams)
-        elif self.nbp:
-            content = self.read_nbp(streams)
-        return content
-
 ###############################################################################
 
 class Drawer(object):
-    def __init__(self,names,types,content,nfeat,nbp):
+    def __init__(self,names,types,nfeat,nbp):
         self.names = names
         self.types = types
-        self.content = content
         self.nfeat = nfeat
         self.nbp = nbp
         self.ntimes = 1
@@ -157,82 +186,7 @@ class Drawer(object):
         self.dens_col = "green"
         self.line_col = "black"
 
-    def bp2px(self,y,wwidth,reg_bp):
-        try: return y*wwidth/reg_bp
-        except ZeroDivisionError: return 0
-
-    def draw_labels(self):
-        for n,name in enumerate(self.names):
-            l = tk.Label(self.root,text=self.names[n],bd=0,highlightthickness=0,bg=self.bg,padx=5)
-            self.wlabel = max(l.winfo_reqwidth(),self.wlabel)
-            l.grid(row=n,column=0)
-        self.wcanvas = self.WIDTH-self.wlabel-self.rmargin
-
-    def draw_tracks(self):
-        feat_thk = self.htrack - 2*self.feat_pad
-        canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
-                  for _ in self.names]
-        for n,t in enumerate(self.content):
-            type = self.types[n]
-            c = canvas[n]
-            c.config(width=self.wcanvas)
-            c.grid(row=n,column=1)
-            if type == 'intervals':
-                c.create_line(0,self.htrack/2.,self.WIDTH,self.htrack/2.,fill=self.line_col) # track axis
-                y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
-                for k,feat in enumerate(t):
-                    f1,f2,g = (feat[0],feat[1],feat[2])
-                    x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
-                    x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
-                    if f1 == 0: x1-=1 # no border
-                    c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
-            elif type == 'density':
-                if t: top_bp = max(float(x[2]) for x in t) # highest score
-                c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # track axis
-                for k,feat in enumerate(t):
-                    f1,f2,s = (feat[0],feat[1],feat[2])
-                    x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
-                    x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
-                    s = self.bp2px(float(s),self.htrack,top_bp)
-                    if f1 == 0: x1-=1
-                    c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
-
-    def draw_margin(self):
-        # Add a blank frame on the right as a margin
-        for n in range(len(self.names)):
-            w = tk.Frame(width=self.rmargin,height=self.htrack,bg=self.bg)
-            w.grid(row=n,column=2)
-
-    def draw_axis(self):
-        self.minpos = self.maxpos if self.ntimes > 1 else 0
-        if self.nbp: self.maxpos = self.ntimes*self.nbp
-        elif self.nfeat: self.maxpos = self.reg_bp
-        c = tk.Canvas(self.root,width=self.wcanvas,height=2*self.htrack,bd=0,
-                      bg=self.canvas_bg,highlightthickness=0)
-        c.grid(row=len(self.names)+1,column=1)
-        pad = c.winfo_reqheight()/2.
-        c.create_line(0,pad,self.WIDTH,pad,fill=self.line_col)  # axis
-        # Ticks & labels
-        min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
-        min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
-        for n,t in enumerate(self.content):
-            for k,feat in enumerate(t):
-                f1,f2 = (feat[0],feat[1])
-                x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
-                x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
-                c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
-                c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
-                if self.nbp:
-                    f1 = feat[0]+(self.ntimes-1)*self.nbp
-                    f2 = feat[1]+(self.ntimes-1)*self.nbp
-                if f1!=self.minpos and f1!=self.maxpos:
-                    c.create_text(x1,pad-5,text=str(f1),anchor='s')
-                if f2!=self.minpos and f2!=self.maxpos:
-                    c.create_text(x2,pad+5,text=str(f2),anchor='n')
-        max_label = tk.Label(text=str(self.maxpos),bd=0,bg=self.bg,anchor='w')
-        max_label.grid(row=len(self.names)+1,column=2,sticky='w',padx=5)
-
-    def draw(self):
+    def draw(self,content):
         """Create a new window and draw from the *content* coordinates
            (of the form [[(1,2,n),(3,4,n)], [(3,5,n),(4,6,n)],...],
            where `n` is either a name or a score)."""
@@ -250,14 +204,90 @@ class Drawer(object):
                 pass
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
-        self.reg_bp = max(x[1] for t in self.content for x in t) # whole region size in bp
-        self.reg_bp = max(self.reg_bp,self.nbp)
+        self.minpos = self.maxpos if self.ntimes > 1 else 0
+        if self.nbp:
+            self.maxpos = self.ntimes*self.nbp
+            self.reg_bp = self.maxpos - self.minpos
+        elif self.nfeat:
+            self.maxpos = max(t[-1][1] for t in content)
+            self.reg_bp = self.maxpos - self.minpos
+        self.reg_bp = float(max(self.reg_bp,self.nbp))
         self.draw_labels()
-        self.draw_tracks()
+        self.draw_tracks(content)
         self.draw_margin()
-        self.draw_axis()
+        self.draw_axis(content)
         self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
+
+    def bp2px(self,x,wwidth,reg_bp):
+        try: return (x-self.minpos) * wwidth/reg_bp
+        except ZeroDivisionError: return 0
+
+    def draw_labels(self):
+        for n,name in enumerate(self.names):
+            l = tk.Label(self.root,text=self.names[n],bd=0,highlightthickness=0,bg=self.bg,padx=5)
+            self.wlabel = max(l.winfo_reqwidth(),self.wlabel)
+            l.grid(row=n,column=0)
+        self.wcanvas = self.WIDTH-self.wlabel-self.rmargin
+
+    def draw_tracks(self,content):
+        feat_thk = self.htrack - 2*self.feat_pad
+        canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
+                  for _ in self.names]
+        for n,t in enumerate(content):
+            type = self.types[n]
+            c = canvas[n]
+            c.config(width=self.wcanvas)
+            c.grid(row=n,column=1)
+            if type == 'intervals':
+                print t
+                c.create_line(0,self.htrack/2.,self.WIDTH,self.htrack/2.,fill=self.line_col) # track axis
+                y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
+                for k,feat in enumerate(t):
+                    f1,f2,g = (feat[0],feat[1],feat[2])
+                    x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
+                    if f1 == 0: x1-=1 # no border
+                    c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
+            elif type == 'density':
+                if t: top_bp = max(float(x[2]) for x in t) # highest score
+                c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # track baseline
+                for k,feat in enumerate(t):
+                    f1,f2,s = (feat[0],feat[1],feat[2])
+                    x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
+                    s = self.bp2px(float(s),self.htrack,top_bp)
+                    if f1 == 0: x1-=1
+                    c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
+
+    def draw_margin(self):
+        # Add a blank frame on the right as a margin
+        for n in range(len(self.names)):
+            w = tk.Frame(width=self.rmargin,height=self.htrack,bg=self.bg)
+            w.grid(row=n,column=2)
+
+    def draw_axis(self,content):
+        c = tk.Canvas(self.root,width=self.wcanvas,height=2*self.htrack,bd=0,
+                      bg=self.canvas_bg,highlightthickness=0)
+        c.grid(row=len(self.names)+1,column=1)
+        pad = c.winfo_reqheight()/2.
+        c.create_line(0,pad,self.WIDTH,pad,fill=self.line_col)  # axis
+        # Ticks & labels
+        min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
+        min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
+        for n,t in enumerate(content):
+            for k,feat in enumerate(t):
+                f1,f2 = (feat[0],feat[1])
+                x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
+                x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
+                c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
+                c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
+                if f1!=self.minpos and f1!=self.maxpos:
+                    c.create_text(x1,pad-5,text=str(f1),anchor='s')
+                if f2!=self.minpos and f2!=self.maxpos:
+                    c.create_text(x2,pad+5,text=str(f2),anchor='n')
+        max_label = tk.Label(text=str(self.maxpos),bd=0,bg=self.bg,anchor='w')
+        max_label.grid(row=len(self.names)+1,column=2,sticky='w',padx=5)
 
 ###############################################################################
 
@@ -266,11 +296,11 @@ class Gless(object):
         self.trackList = trackList
         self.names = [os.path.basename(t) for t in trackList]
         self.types = [self.get_type(n) for n in self.names]
-        self.tracks = [track(t) for t in self.trackList]
         self.nfeat = nfeat
         self.nbp = nbp
         self.sel = sel
-        self.reader = Reader(self.tracks,self.nfeat,self.nbp,self.sel)
+        self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
+        self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp)
 
     def get_type(self,filename):
         """Return whether it is a track with 'intervals' or a 'density'."""
@@ -288,24 +318,26 @@ class Gless(object):
             print "Nothing to show"
             sys.exit(0)
         needtodraw = True
-        drawer = Drawer(self.names,self.types,content,self.nfeat,self.nbp)
         while True:
             if needtodraw:
                 needtodraw = False
-                drawer.draw()
-                drawer.ntimes += 1
-            if drawer.keydown == chr(27): sys.exit(0) # "Enter" pressed
-            elif drawer.keydown == ' ':
+                self.drawer.draw(content)
+                self.drawer.ntimes += 1
+            if self.drawer.keydown == chr(27): sys.exit(0) # "Enter" pressed
+            elif self.drawer.keydown == ' ':
                 try:
-                    drawer.content = stream.next() # Load next data
-                    for w in drawer.root.children.values(): # Clear the window
+                    content = stream.next() # Load next data
+                    for w in self.drawer.root.children.values(): # Clear the window
                         w.destroy()
                     needtodraw = True
                 except StopIteration:
-                    print "End of file."
-                    drawer.minpos = 0
-                    drawer.ntimes = 1
-                    stream = self.reader.read()
+                    print "End of chromosome."
+                    self.drawer.minpos = 0
+                    self.drawer.ntimes = 1
+                    self.drawer.keydown = None
+                    needtodraw = True
+                    #self.drawer.draw(content)    # Stop showing the last frame
+                    #stream = self.reader.read() # Return to the beginning
 
 ###############################################################################
 
