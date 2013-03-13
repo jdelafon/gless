@@ -108,7 +108,10 @@ class Reader(object):
             while len_toyield < self.nfeat and self.buffer:
                 self.buffer.sort(key=sortkey)
                 min_idx = self.buffer[0][-1]
-                toyield[min_idx].append(self.buffer.pop(0)[0][1:])
+                nextitem = self.buffer.pop(0)[0]
+                #if nextitem[2] >= minpos: # feature count is wrong
+                #    toyield[min_idx].append(nextitem[1:])
+                toyield[min_idx].append(nextitem[1:])
                 len_toyield += 1
                 try:
                     self.buffer.append([streams[min_idx].next(),min_idx]) # read next item
@@ -127,8 +130,9 @@ class Reader(object):
                     for n,x in enumerate(self.buffer):
                         if x[0][1] < maxpos:
                             toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos),x[0][3]))
-                            if x[0][2] != maxpos:
-                                self.buffer[n][0] = (x[0][0],min(x[0][2],maxpos),x[0][2],x[0][3])
+                            if x[0][2] > maxpos:
+                                self.buffer[n][0] = (x[0][0],maxpos,x[0][2],x[0][3])
+                print "Toyield", self.chr, toyield
                 yield toyield
             else: break
 
