@@ -19,7 +19,7 @@ class Parser(object):
             for line in f:
                 line = line.strip().split()
                 try:
-                    #chr = line[0]
+                    chr = line[0]
                     start,end = (int(line[1]),int(line[2]))
                 except (IndexError,ValueError):
                     raise ValueError(("Library 'bbcflib' not found. "
@@ -363,7 +363,6 @@ class Gless(object):
                 self.load_next(stream) # fake
             elif self.drawer.keydown == chr(39): # Right arrow pressed: shift right
                 self.load_next(stream) # fake
-
 
 ###############################################################################
 
