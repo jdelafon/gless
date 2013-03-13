@@ -357,7 +357,7 @@ class Gless(object):
                 self.load_next(stream)
             elif self.drawer.keydown == chr(127): # "BackSpace" ("Delete") pressed: return
                 self.reinit()
-                self.reader.buffer = []
+                self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
                 stream = self.reader.read()
                 self.load_next(stream)
 
