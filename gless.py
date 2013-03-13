@@ -19,9 +19,9 @@ class Parser(object):
             for line in f:
                 line = line.strip().split()
                 try:
-                    chr = line[0]
+                    #chr = line[0]
                     start,end = (int(line[1]),int(line[2]))
-                except IndexError:
+                except (IndexError,ValueError):
                     raise ValueError(("Library 'bbcflib' not found. "
                                       "Only 'bed' and 'bedGraph' formats available "
                                       "(got '%s')." % os.path.basename(self.filehandle)))
@@ -144,7 +144,7 @@ class Reader(object):
                             self.buffer[n] = None
                             toremove.append(n)
                     elif x[1] < maxpos:
-                        toyield[n].append((x[1],self.nbp,x[3]))
+                        toyield[n].append((x[1],maxpos,x[3]))
                         self.buffer[n] = (x[0],maxpos,x[2],x[3])
                     else: break
             for n in toremove: available_streams.remove(n)
@@ -186,7 +186,6 @@ class Drawer(object):
            (of the form [[(1,2,n),(3,4,n)], [(3,5,n),(4,6,n)],...],
            where `n` is either a name or a score)."""
         def keyboard(event):
-            print event.keysym
             if event.keysym == 'Escape':
                 self.keydown = chr(27)
                 self.root.destroy()
@@ -217,7 +216,7 @@ class Drawer(object):
             self.maxpos = max(t[-1][1] for t in content)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
-        print 2, self.minpos, self.maxpos
+        print "Minpos,maxpos:", self.minpos, self.maxpos
         self.draw_labels()
         self.draw_tracks(content)
         self.draw_margin()
@@ -252,7 +251,7 @@ class Drawer(object):
                     f1,f2,g = (feat[0],feat[1],feat[2])
                     x1 = self.bp2px(f1,self.wcanvas,self.reg_bp)
                     x2 = self.bp2px(f2,self.wcanvas,self.reg_bp)
-                    if f1 == 0: x1-=1 # no border
+                    if f1 == self.minpos: x1-=1 # no border
                     c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
             elif type == 'density':
                 if t: top_bp = max(float(x[2]) for x in t) # highest score
@@ -358,6 +357,7 @@ class Gless(object):
                 self.load_next(stream)
             elif self.drawer.keydown == chr(127): # "BackSpace" ("Delete") pressed: return
                 self.reinit()
+                self.reader.buffer = []
                 stream = self.reader.read()
                 self.load_next(stream)
 
