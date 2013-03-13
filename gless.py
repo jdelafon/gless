@@ -139,7 +139,7 @@ class Reader(object):
             maxpos = self.ntimes*self.nbp
             toyield = [[] for _ in streams]
             toremove = []
-            self.chr_change = False
+            chr_change = self.chr_change
             # Load items within *nbp* in *toyield*
             for n in available_streams:
                 while self.buffer[n]:
@@ -150,8 +150,8 @@ class Reader(object):
                             self.buffer[n] = streams[n].next()
                             chrom = self.buffer[n][0]
                             if chrom != self.chr:
-                                self.chr_change = True
-                                self.chr = chrom
+                                print 1
+                                chr_change = True
                                 break
                         except StopIteration:
                             self.buffer[n] = None
@@ -160,6 +160,9 @@ class Reader(object):
                         toyield[n].append((x[1],maxpos,x[3]))
                         self.buffer[n] = (x[0],maxpos,x[2],x[3])
                     else: break
+            if chr_change:
+                self.chr = chrom
+                self.chr_change = chr_change
             for n in toremove: available_streams.remove(n)
             if any(toyield):
                 print toyield
@@ -264,7 +267,6 @@ class Drawer(object):
                     x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
                     x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                     if f1 == self.minpos: x1-=1 # no border
-                    print feat,x1,x2
                     c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
             elif type == 'density':
                 if t: top_bp = max(float(x[2]) for x in t) # highest score
