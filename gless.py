@@ -25,11 +25,11 @@ class Parser(object):
                     raise ValueError(("Library 'bbcflib' not found. "
                                       "Only 'bed' and 'bedGraph' formats available "
                                       "(got '%s')." % os.path.basename(self.filehandle)))
-                if selection:
-                    if chr != selection['chr'] \
-                       or not selection['start'][0] < start < selection['start'][1] \
-                       or not selection['end'][0] < start < selection['end'][1]:
-                        continue
+                #if selection:
+                #    if chr != selection['chr'] \
+                #       or not selection['start'][0] < start < selection['start'][1] \
+                #       or not selection['end'][0] < start < selection['end'][1]:
+                #        continue
                 yield tuple(line)
 try:
     from bbcflib.btrack import track
@@ -46,6 +46,7 @@ class Reader(object):
         self.chr = self.init_chr()
         self.buffer = []
         self.chr_change = False
+        self.ntimes = 1
         if nbp:
             self.nbp = nbp
             self.nfeat = None
@@ -122,19 +123,17 @@ class Reader(object):
     def read_nbp(self,streams):
         available_streams = range(len(streams))
         self.buffer = [s.next() for k,s in enumerate(streams)]
-        nbp = self.nbp
         # Repeat & yield each time the function is called
-        self.chr_change = False
-        k = 0 # number of times called
         while available_streams:
-            k += 1
+            maxpos = self.ntimes*self.nbp
             toyield = [[] for _ in streams]
             toremove = []
+            self.chr_change = False
             # Load items within *nbp* in *toyield*
             for n in available_streams:
                 while self.buffer[n]:
                     x = self.buffer[n]
-                    if x[2] <= k*nbp:
+                    if x[2] <= maxpos:
                         toyield[n].append((x[1],x[2],x[3]))
                         try:
                             self.buffer[n] = streams[n].next()
@@ -146,13 +145,11 @@ class Reader(object):
                         except StopIteration:
                             self.buffer[n] = None
                             toremove.append(n)
-                    elif x[1] < k*nbp:
-                        toyield[n].append((x[1],nbp,x[3]))
-                        self.buffer[n] = (x[0],k*nbp,x[2],x[3])
+                    elif x[1] < maxpos:
+                        toyield[n].append((x[1],self.nbp,x[3]))
+                        self.buffer[n] = (x[0],maxpos,x[2],x[3])
                     else: break
             for n in toremove: available_streams.remove(n)
-            if self.chr_change:
-                self.chr_change = False
             if any(toyield):
                 yield toyield
             else:
@@ -166,7 +163,7 @@ class Drawer(object):
         self.types = types
         self.nfeat = nfeat
         self.nbp = nbp
-        self.ntimes = 1
+        self.ntimes = 0
         self.maxpos = 0
         self.minpos = 0
         self.keydown = ''
@@ -204,14 +201,15 @@ class Drawer(object):
                 pass
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
-        self.minpos = self.maxpos if self.ntimes > 1 else 0
+        self.minpos = self.maxpos if self.ntimes > 0 else 0
         if self.nbp:
-            self.maxpos = self.ntimes*self.nbp
+            self.maxpos = (self.ntimes+1)*self.nbp
             self.reg_bp = self.maxpos - self.minpos
         elif self.nfeat:
             self.maxpos = max(t[-1][1] for t in content)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
+        print self.minpos, self.maxpos, self.ntimes
         self.draw_labels()
         self.draw_tracks(content)
         self.draw_margin()
@@ -271,9 +269,6 @@ class Drawer(object):
         c.grid(row=len(self.names)+1,column=1)
         pad = c.winfo_reqheight()/2.
         c.create_line(0,pad,self.WIDTH,pad,fill=self.line_col)  # axis
-        # Ticks & labels
-        min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
-        min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
         for n,t in enumerate(content):
             for k,feat in enumerate(t):
                 f1,f2 = (feat[0],feat[1])
@@ -285,6 +280,8 @@ class Drawer(object):
                     c.create_text(x1,pad-5,text=str(f1),anchor='s')
                 if f2!=self.minpos and f2!=self.maxpos:
                     c.create_text(x2,pad+5,text=str(f2),anchor='n')
+        min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
+        min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
         max_label = tk.Label(text=str(self.maxpos),bd=0,bg=self.bg,anchor='w')
         max_label.grid(row=len(self.names)+1,column=2,sticky='w',padx=5)
 
@@ -316,27 +313,39 @@ class Gless(object):
         except StopIteration:
             print "Nothing to show"
             sys.exit(0)
+        print "New content", content
         needtodraw = True
         while True:
             if needtodraw:
+                print "Draw!"
+                if self.reader.chr_change:
+                    print "NewChr", self.reader.chr
                 needtodraw = False
                 self.drawer.draw(content)
                 self.drawer.ntimes += 1
             if self.drawer.keydown == chr(27): sys.exit(0) # "Enter" pressed
             elif self.drawer.keydown == ' ':
+                self.reader.ntimes += 1
+                print ''
+                if self.reader.chr_change:
+                    print 333333
+                    self.drawer.minpos = 0
+                    self.drawer.maxpos = 0
+                    self.drawer.ntimes = 0
+                    self.reader.ntimes = 1
                 try:
                     content = stream.next() # Load next data
+                    print "New content", content
                     for w in self.drawer.root.children.values(): # Clear the window
                         w.destroy()
                     needtodraw = True
                 except StopIteration:
-                    print "End of chromosome."
-                    self.drawer.minpos = 0
-                    self.drawer.ntimes = 1
-                    self.drawer.keydown = None
+                    print 222222
                     needtodraw = True
                     #self.drawer.draw(content)    # Stop showing the last frame
                     #stream = self.reader.read() # Return to the beginning
+                for w in self.drawer.root.children.values(): # Clear the window
+                    w.destroy()
 
 ###############################################################################
 
