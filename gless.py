@@ -45,6 +45,7 @@ class Reader(object):
         self.sel = self.parse_selection(sel)
         self.chr = self.init_chr()
         self.buffer = []
+        self.chr_change = False
         if nbp:
             self.nbp = nbp
             self.nfeat = None
@@ -82,7 +83,7 @@ class Reader(object):
         available_streams = range(len(streams))
         self.buffer = [[s.next(),k] for k,s in enumerate(streams)]
         sortkey = lambda x:(x[0][0],x[0][1])
-        newchr = False
+        self.chr_change = False
         # Repeat & yield each time the function is called
         while available_streams:
             toyield = [[] for _ in streams]
@@ -97,15 +98,15 @@ class Reader(object):
                     self.buffer.append([streams[min_idx].next(),min_idx]) # read next item
                     chrom = self.buffer[0][0][0]
                     if chrom != self.chr:
-                        newchr = True
+                        self.chr_change = True
                         self.chr = chrom
                         break
                 except StopIteration:
                     try: available_streams.pop(min_idx)
                     except IndexError: continue
             if any(toyield):
-                if newchr:
-                    newchr = False
+                if self.chr_change:
+                    self.chr_change = False
                     yield toyield
                 # Add feats that go partially beyond
                 else:
@@ -115,7 +116,6 @@ class Reader(object):
                             toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos),x[0][3]))
                             if x[0][2] != maxpos:
                                 self.buffer[n][0] = [x[0][0],min(x[0][2],maxpos),x[0][2],x[0][3]]
-                    #print "Toyield:",toyield
                     yield toyield
             else: break
 
@@ -124,7 +124,7 @@ class Reader(object):
         self.buffer = [s.next() for k,s in enumerate(streams)]
         nbp = self.nbp
         # Repeat & yield each time the function is called
-        newchr = False
+        self.chr_change = False
         k = 0 # number of times called
         while available_streams:
             k += 1
@@ -140,7 +140,7 @@ class Reader(object):
                             self.buffer[n] = streams[n].next()
                             chrom = self.buffer[n][0]
                             if chrom != self.chr:
-                                newchr = True
+                                self.chr_change = True
                                 self.chr = chrom
                                 break
                         except StopIteration:
@@ -151,8 +151,8 @@ class Reader(object):
                         self.buffer[n] = (x[0],k*nbp,x[2],x[3])
                     else: break
             for n in toremove: available_streams.remove(n)
-            if newchr:
-                newchr = False
+            if self.chr_change:
+                self.chr_change = False
             if any(toyield):
                 yield toyield
             else:
@@ -240,7 +240,6 @@ class Drawer(object):
             c.config(width=self.wcanvas)
             c.grid(row=n,column=1)
             if type == 'intervals':
-                print t
                 c.create_line(0,self.htrack/2.,self.WIDTH,self.htrack/2.,fill=self.line_col) # track axis
                 y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
                 for k,feat in enumerate(t):
