@@ -319,6 +319,7 @@ class Gless(object):
         self.nfeat = nfeat
         self.nbp = nbp
         self.sel = sel
+        self.stream = None
         self.content = None
         self.needtodraw = True
         self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
@@ -332,15 +333,37 @@ class Gless(object):
             elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
                 return 'density'
 
+    def __call__(self):
+        """Main controller function."""
+        self.stream = self.reader.read()
+        try: self.content = self.stream.next()
+        except StopIteration:
+            print "Nothing to show"
+            sys.exit(0)
+        while True:
+            if self.needtodraw:
+                self.drawer.draw(self.content)
+                self.needtodraw = False
+            if self.drawer.keydown == chr(27): # "Esc" pressed: quit
+                sys.exit(0)
+            elif self.drawer.keydown == ' ': # "Space" pressed: next
+                self.fast_forward()
+            elif self.drawer.keydown == chr(127): # "BackSpace" ("Delete") pressed: return
+                self.return_to_beginning()
+            elif self.drawer.keydown == chr(37): # Left arrow pressed: shift left
+                self.slow_reward()
+            elif self.drawer.keydown == chr(39): # Right arrow pressed: shift right
+                self.slow_forward()
+
     def reinit(self):
         self.drawer.minpos = 0
         self.drawer.maxpos = 0
         self.drawer.ntimes = 0
         self.reader.ntimes = 1
 
-    def load_next(self,stream):
+    def load_next(self):
         try:
-            self.content = stream.next() # Load next data
+            self.content = self.stream.next() # Load next data
             for w in self.drawer.root.children.values(): # Clear the window
                 w.destroy()
         except StopIteration:
@@ -351,35 +374,28 @@ class Gless(object):
         for w in self.drawer.root.children.values(): # Clear the window
             w.destroy()
 
-    def __call__(self):
-        """Main controller function."""
-        stream = self.reader.read()
-        try: self.content = stream.next()
-        except StopIteration:
-            print "Nothing to show"
-            sys.exit(0)
-        while True:
-            if self.needtodraw:
-                self.needtodraw = False
-                self.drawer.draw(self.content)
-            if self.drawer.keydown == chr(27): # "Esc" pressed: quit
-                sys.exit(0)
-            elif self.drawer.keydown == ' ': # "Space" pressed: next
-                if self.reader.chr_change:
-                    self.reinit()
-                else:
-                    self.reader.ntimes += 1
-                    self.drawer.ntimes += 1
-                self.load_next(stream)
-            elif self.drawer.keydown == chr(127): # "BackSpace" ("Delete") pressed: return
-                self.reinit()
-                self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
-                stream = self.reader.read()
-                self.load_next(stream)
-            elif self.drawer.keydown == chr(37): # Left arrow pressed: shift left
-                self.load_next(stream) # fake
-            elif self.drawer.keydown == chr(39): # Right arrow pressed: shift right
-                self.load_next(stream) # fake
+    def return_to_beginning(self):
+        self.reinit()
+        self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
+        self.stream = self.reader.read()
+        self.load_next()
+
+    def fast_forward(self):
+        if self.reader.chr_change:
+            self.reinit()
+        else:
+            self.reader.ntimes += 1
+            self.drawer.ntimes += 1
+        self.load_next()
+
+    def slow_forward(self):
+        self.load_next()
+
+    def fast_reward(self):
+        self.load_next()
+
+    def slow_reward(self):
+        self.load_next()
 
 ###############################################################################
 
