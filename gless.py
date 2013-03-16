@@ -19,18 +19,17 @@ class Parser(object):
             for line in f:
                 line = line.strip().split()
                 try:
-                    chr = line[0]
-                    start,end = (int(line[1]),int(line[2]))
+                    chr,start,end = (line[0],int(line[1]),int(line[2]))
                 except (IndexError,ValueError):
                     raise ValueError(("Library 'bbcflib' not found. "
                                       "Only 'bed' and 'bedGraph' formats available "
                                       "(got '%s')." % os.path.basename(self.filehandle)))
                 # Skip lines until selection requirements are fulfilled
-                if selection:
-                    if chr != selection['chr'] \
-                       or not selection['start'][0] < start < selection['start'][1] \
-                       or not selection['end'][0] < start < selection['end'][1]:
-                        continue
+                #if selection:
+                #    if chr != selection['chr'] \
+                #       or not selection['start'][0] < start < selection['start'][1] \
+                #       or not selection['end'][0] < end < selection['end'][1]:
+                #        continue
                 yield tuple(line)
 try:
     from bbcflib.btrack import track
@@ -79,7 +78,7 @@ class Reader(object):
         else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
 
     def init_chr(self):
-        if self.sel: return
+        #if self.sel: return
         for t in self.tracks:
             try: return t.read().next()[0]
             except StopIteration: continue
@@ -88,15 +87,42 @@ class Reader(object):
         """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6,n)]] with either the *nfeat*
            next items, or all next items within an *nbp* window. `n` is a name or a score."""
         streams = [t.read(fields=t.fields[:4]) for t in self.tracks]
+        self.go_to_selection(streams)
         if self.nfeat:
             content = self.read_nfeat(streams)
         elif self.nbp:
             content = self.read_nbp(streams)
         return content
 
+    def go_to_selection(self,streams):
+        nosel = (0,sys.maxint)
+        self.buffer = [s.next() for s in streams]
+        if self.sel:
+            for i,stream in enumerate(streams):
+                try:
+                    chr,start,end = self.buffer[i][:3]
+                    #print i,chr,start,end
+                    while chr != self.sel.get('chr',self.chr) \
+                    or not (self.sel.get('start',nosel)[0] < start < self.sel.get('start',nosel)[1]) \
+                    or not (self.sel.get('end',nosel)[0] < end < self.sel.get('end',nosel)[1]):
+                        self.buffer[i] = stream.next()
+                        chr,start,end = self.buffer[i][:3]
+                        #print chr != self.sel.get('chr',self.chr)
+                        #print not (self.sel.get('start',nosel)[0] < start < self.sel.get('start',nosel)[1])
+                        #print not (self.sel.get('end',nosel)[0] < end < self.sel.get('end',nosel)[1])
+                        print "Skipped:",chr,start,end
+                        #print "        ",chr,'!=',self.chr,chr!=self.chr
+                        #print "        ",self.sel.get('start',nosel)[0]>=start
+                        #print "        ",self.sel.get('start',nosel)[1]<=start
+                        #print "        ",self.sel.get('end',nosel)[0]>=end
+                        #print "        ",self.sel.get('end',nosel)[1]<=end
+                except StopIteration:
+                    print "End of stream %i" % i
+                    return
+
     def read_nfeat(self,streams):
         available_streams = range(len(streams))
-        self.buffer = [[s.next(),k] for k,s in enumerate(streams)]
+        self.buffer = [[x,k] for k,x in enumerate(self.buffer)]
         sortkey = lambda x:(x[0][0],x[0][1])
         self.chr_change = False
         # Repeat & yield each time the function is called
@@ -138,7 +164,6 @@ class Reader(object):
 
     def read_nbp(self,streams):
         available_streams = range(len(streams))
-        self.buffer = [s.next() for k,s in enumerate(streams)]
         # Repeat & yield each time the function is called
         while available_streams:
             maxpos = self.ntimes*self.nbp
@@ -200,7 +225,7 @@ class Drawer(object):
         self.dens_col = "green"
         self.line_col = "black"
 
-    def draw(self,content):
+    def draw(self,content,chrom):
         """Create a new window and draw from the *content* coordinates
            (of the form [[(1,2,n),(3,4,n)], [(3,5,n),(4,6,n)],...],
            where `n` is either a name or a score)."""
@@ -236,7 +261,7 @@ class Drawer(object):
         self.reg_bp = float(max(self.reg_bp,self.nbp))
         self.draw_labels()
         self.draw_tracks(content)
-        self.draw_margin()
+        self.draw_margin(chrom)
         self.draw_axis(content)
         self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
@@ -281,9 +306,11 @@ class Drawer(object):
                     if f1 == 0: x1-=1
                     c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
 
-    def draw_margin(self):
+    def draw_margin(self,chrom):
+        w = tk.Label(text=chrom,bg='red')
+        w.grid(row=0,column=2)
         # Add a blank frame on the right as a margin
-        for n in range(len(self.names)):
+        for n in range(1,len(self.names)):
             w = tk.Frame(width=self.rmargin,height=self.htrack,bg=self.bg)
             w.grid(row=n,column=2)
 
@@ -340,16 +367,19 @@ class Gless(object):
         except StopIteration:
             print "Nothing to show"
             sys.exit(0)
+        chrom = self.reader.chr
         while True:
             if self.needtodraw:
-                self.drawer.draw(self.content)
+                self.drawer.draw(self.content,chrom)
                 self.needtodraw = False
+                chrom = self.reader.chr
             if self.drawer.keydown == chr(27): # "Esc" pressed: quit
                 sys.exit(0)
             elif self.drawer.keydown == ' ': # "Space" pressed: next
                 self.fast_forward()
             elif self.drawer.keydown == chr(127): # "BackSpace" ("Delete") pressed: return
                 self.return_to_beginning()
+                chrom = self.reader.chr
             elif self.drawer.keydown == chr(37): # Left arrow pressed: shift left
                 self.slow_reward()
             elif self.drawer.keydown == chr(39): # Right arrow pressed: shift right
