@@ -108,14 +108,11 @@ class Reader(object):
                         skipped += 1
                 except StopIteration:
                     self.temp[i] = (self.chrom,0,0,'00')
-                    print "End of stream %i" % i
             self.chrom = self.sel['chr']
             if self.nbp:
                 temppos = [x[1] for x in self.temp if x[3]!='00']
-                if temppos:
-                    self.ntimes += min(x[1] for x in self.temp if x[3]!='00') / self.nbp
-                else:
-                    sys.exit("Chromosome %s not found." % self.chrom)
+                if temppos: self.ntimes += min(temppos) / self.nbp
+                else: sys.exit("Chromosome %s not found." % self.chrom)
             elif self.nfeat:
                 self.ntimes += skipped / self.nfeat
 
@@ -173,7 +170,6 @@ class Reader(object):
             # Load items within *nbp* in *toyield*
             for n in available_streams:
                 x = self.temp[n]
-                print x, self.chrom
                 while x[0] == self.chrom and x[2] <= maxpos:
                     toyield[n].append((x[1],x[2],x[3]))
                     try: x = streams[n].next()
@@ -192,7 +188,7 @@ class Reader(object):
                 self.chrom = chrom[0]
                 self.chrom_change = True
             if any(toyield):
-                print "Toyield", toyield
+                #print "Toyield", toyield
                 yield toyield
             else:
                 yield [[(0,0,'00')] for _ in streams]
@@ -447,8 +443,7 @@ def main():
     if args.nbp: args.nfeat = None
     elif args.nfeat and args.nfeat > 10000:
         print "Up to 10000 features permitted, got -n %s." % args.nfeat; sys.exit(1)
-    G = Gless(args.file,args.nfeat,args.nbp,args.sel)
-    G()
+    Gless(args.file,args.nfeat,args.nbp,args.sel)()
 
 if __name__ == '__main__':
     sys.exit(main())
