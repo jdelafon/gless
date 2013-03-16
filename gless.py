@@ -169,7 +169,6 @@ class Reader(object):
                     except StopIteration:
                         toremove.append(n)
                         self.temp[n] = None
-                        chrom[n] = None
                         break
                 if x[0] != self.chrom:
                     chrom[n] = x[0]
@@ -177,10 +176,10 @@ class Reader(object):
                     toyield[n].append((x[1],maxpos,x[3]))
                     x = (x[0],maxpos,x[2],x[3])
                 self.temp[n] = x
+            for n in toremove: available_streams.remove(n)
             if all(chrom[n] != self.chrom for n in available_streams):
                 self.chrom = chrom[0]
                 self.chrom_change = True
-            for n in toremove: available_streams.remove(n)
             if any(toyield):
                 #print "Toyield", toyield
                 yield toyield
