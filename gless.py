@@ -359,7 +359,7 @@ class Gless(object):
         chrom = self.reader.chrom
         while True:
             if self.needtodraw:
-                self.drawer.ntimes = self.reader.ntimes
+                self.drawer.ntimes = self.reader.ntimes-1
                 self.drawer.draw(self.content,chrom)
                 self.needtodraw = False
                 chrom = self.reader.chrom
