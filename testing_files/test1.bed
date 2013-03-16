@@ -8,8 +8,8 @@ chr1	78	91	C.1
 chr1	93	94	C.1
 chr1	95	111	C.1
 chr1	125	131	C.1
-#chr2	5	10	a.1
-#chr2	15	20	b.1
+chr2	5	10	a.1
+chr2	15	20	b.1
 chr2	25	30	c.1
 chr2	35	40	d.1
 chr2	45	50	d.1

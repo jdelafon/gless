@@ -147,7 +147,7 @@ class Reader(object):
                             toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos),x[0][3]))
                             if x[0][2] > maxpos:
                                 self.temp[n][0] = (x[0][0],maxpos,x[0][2],x[0][3])
-                print "Toyield", self.chrom, toyield
+                #print "Toyield", toyield
                 yield toyield
             else: break
 
@@ -169,6 +169,7 @@ class Reader(object):
                     except StopIteration:
                         toremove.append(n)
                         self.temp[n] = None
+                        chrom[n] = None
                         break
                 if x[0] != self.chrom:
                     chrom[n] = x[0]
@@ -181,7 +182,7 @@ class Reader(object):
                 self.chrom_change = True
             for n in toremove: available_streams.remove(n)
             if any(toyield):
-                #print "Toyield", self.chrom, toyield
+                #print "Toyield", toyield
                 yield toyield
             else:
                 yield [[(0,0,'00')] for _ in streams]
@@ -242,7 +243,7 @@ class Drawer(object):
         self.root.config(bg=self.bg)
         self.minpos = self.maxpos if self.ntimes > 0 else 0
         if self.nbp:
-            self.maxpos = (self.ntimes+1)*self.nbp
+            self.maxpos = self.ntimes*self.nbp
             self.reg_bp = self.maxpos - self.minpos
         elif self.nfeat:
             self.maxpos = max(t[-1][1] for t in content if t)
@@ -359,7 +360,7 @@ class Gless(object):
         chrom = self.reader.chrom
         while True:
             if self.needtodraw:
-                self.drawer.ntimes = self.reader.ntimes-1
+                self.drawer.ntimes = self.reader.ntimes
                 self.drawer.draw(self.content,chrom)
                 self.needtodraw = False
                 chrom = self.reader.chrom
@@ -379,7 +380,6 @@ class Gless(object):
         self.drawer.minpos = 0
         self.drawer.maxpos = 0
         self.reader.ntimes = 1
-        self.drawer.ntimes = 0
 
     def load_next(self):
         try:
