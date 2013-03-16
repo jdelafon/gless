@@ -24,12 +24,6 @@ class Parser(object):
                     raise ValueError(("Library 'bbcflib' not found. "
                                       "Only 'bed' and 'bedGraph' formats available "
                                       "(got '%s')." % os.path.basename(self.filehandle)))
-                # Skip lines until selection requirements are fulfilled
-                #if selection:
-                #    if chr != selection['chr'] \
-                #       or not selection['start'][0] < start < selection['start'][1] \
-                #       or not selection['end'][0] < end < selection['end'][1]:
-                #        continue
                 yield tuple(line)
 try:
     from bbcflib.btrack import track
@@ -56,9 +50,9 @@ class Reader(object):
     def __init__(self,trackList,nfeat,nbp,sel):
         self.tracks = [track(t) for t in trackList]
         self.sel = self.parse_selection(sel)
-        self.chr = self.init_chr()
-        self.buffer = []
-        self.chr_change = False
+        self.chrom = self.init_chr()
+        self.temp = []
+        self.chrom_change = False
         self.ntimes = 1
         if nbp:
             self.nbp = nbp
@@ -78,7 +72,6 @@ class Reader(object):
         else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
 
     def init_chr(self):
-        #if self.sel: return
         for t in self.tracks:
             try: return t.read().next()[0]
             except StopIteration: continue
@@ -96,69 +89,65 @@ class Reader(object):
 
     def go_to_selection(self,streams):
         nosel = (0,sys.maxint)
-        self.buffer = [s.next() for s in streams]
+        skipped = 0
+        self.temp = [s.next() for s in streams]
         if self.sel:
             for i,stream in enumerate(streams):
                 try:
-                    chr,start,end = self.buffer[i][:3]
-                    #print i,chr,start,end
-                    while chr != self.sel.get('chr',self.chr) \
+                    chr,start,end = self.temp[i][:3]
+                    while chr != self.sel.get('chr',self.chrom) \
                     or not (self.sel.get('start',nosel)[0] < start < self.sel.get('start',nosel)[1]) \
                     or not (self.sel.get('end',nosel)[0] < end < self.sel.get('end',nosel)[1]):
-                        self.buffer[i] = stream.next()
-                        chr,start,end = self.buffer[i][:3]
-                        #print chr != self.sel.get('chr',self.chr)
-                        #print not (self.sel.get('start',nosel)[0] < start < self.sel.get('start',nosel)[1])
-                        #print not (self.sel.get('end',nosel)[0] < end < self.sel.get('end',nosel)[1])
-                        print "Skipped:",chr,start,end
-                        #print "        ",chr,'!=',self.chr,chr!=self.chr
-                        #print "        ",self.sel.get('start',nosel)[0]>=start
-                        #print "        ",self.sel.get('start',nosel)[1]<=start
-                        #print "        ",self.sel.get('end',nosel)[0]>=end
-                        #print "        ",self.sel.get('end',nosel)[1]<=end
+                        self.temp[i] = stream.next()
+                        chr,start,end = self.temp[i][:3]
+                        skipped += 1
                 except StopIteration:
+                    self.temp[i] = (self.chrom,0,0,'00')
                     print "End of stream %i" % i
-                    return
+            if self.nbp:
+                self.ntimes += min(x[1] for x in self.temp if x[3]!='00') / self.nbp
+            elif self.nfeat:
+                self.ntimes += skipped / self.nfeat
 
     def read_nfeat(self,streams):
         available_streams = range(len(streams))
-        self.buffer = [[x,k] for k,x in enumerate(self.buffer)]
+        self.temp = [[x,k] for k,x in enumerate(self.temp)]
         sortkey = lambda x:(x[0][0],x[0][1])
-        self.chr_change = False
+        self.chrom_change = False
         # Repeat & yield each time the function is called
         while available_streams:
-            self.chr_change = False
+            self.chrom_change = False
             toyield = [[] for _ in streams]
             len_toyield = 0
             # Load *nfeat* in *toyield*
-            while len_toyield < self.nfeat and self.buffer:
-                self.buffer.sort(key=sortkey)
-                min_idx = self.buffer[0][-1]
-                nextitem = self.buffer.pop(0)[0]
+            while len_toyield < self.nfeat and self.temp:
+                self.temp.sort(key=sortkey)
+                min_idx = self.temp[0][-1]
+                nextitem = self.temp.pop(0)[0]
                 #if nextitem[2] >= minpos: # feature count is wrong
                 #    toyield[min_idx].append(nextitem[1:])
                 toyield[min_idx].append(nextitem[1:])
                 len_toyield += 1
                 try:
-                    self.buffer.append([streams[min_idx].next(),min_idx]) # read next item
-                    chrom = self.buffer[0][0][0]
-                    if chrom != self.chr:
-                        self.chr_change = True
-                        self.chr = chrom
+                    self.temp.append([streams[min_idx].next(),min_idx]) # read next item
+                    chrom = self.temp[0][0][0]
+                    if chrom != self.chrom:
+                        self.chrom_change = True
+                        self.chrom = chrom
                         break
                 except StopIteration:
                     try: available_streams.pop(min_idx)
                     except IndexError: continue
             if any(toyield):
                 # Add feats that go partially beyond
-                if not self.chr_change:
+                if not self.chrom_change:
                     maxpos = max(x[-1][1] for x in toyield if x)
-                    for n,x in enumerate(self.buffer):
+                    for n,x in enumerate(self.temp):
                         if x[0][1] < maxpos:
                             toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos),x[0][3]))
                             if x[0][2] > maxpos:
-                                self.buffer[n][0] = (x[0][0],maxpos,x[0][2],x[0][3])
-                print "Toyield", self.chr, toyield
+                                self.temp[n][0] = (x[0][0],maxpos,x[0][2],x[0][3])
+                print "Toyield", self.chrom, toyield
                 yield toyield
             else: break
 
@@ -169,33 +158,33 @@ class Reader(object):
             maxpos = self.ntimes*self.nbp
             toyield = [[] for _ in streams]
             toremove = []
-            self.chr_change = False
-            chrom = [self.chr for _ in streams]
+            self.chrom_change = False
+            chrom = [self.chrom for _ in streams]
             # Load items within *nbp* in *toyield*
             for n in available_streams:
-                x = self.buffer[n]
-                while x[0] == self.chr and x[2] <= maxpos:
+                x = self.temp[n]
+                while x[0] == self.chrom and x[2] <= maxpos:
                     toyield[n].append((x[1],x[2],x[3]))
                     try: x = streams[n].next()
                     except StopIteration:
                         toremove.append(n)
-                        self.buffer[n] = None
+                        self.temp[n] = None
                         break
-                if x[0] != self.chr:
+                if x[0] != self.chrom:
                     chrom[n] = x[0]
                 elif x[2] > maxpos and x[1] < maxpos:
                     toyield[n].append((x[1],maxpos,x[3]))
                     x = (x[0],maxpos,x[2],x[3])
-                self.buffer[n] = x
-            if all(chrom[n] != self.chr for n in available_streams):
-                self.chr = chrom[0]
-                self.chr_change = True
+                self.temp[n] = x
+            if all(chrom[n] != self.chrom for n in available_streams):
+                self.chrom = chrom[0]
+                self.chrom_change = True
             for n in toremove: available_streams.remove(n)
             if any(toyield):
-                #print "Toyield", self.chr, toyield
+                #print "Toyield", self.chrom, toyield
                 yield toyield
             else:
-                yield [[(0,0,'0')] for _ in streams]
+                yield [[(0,0,'00')] for _ in streams]
 
 ###############################################################################
 
@@ -367,19 +356,19 @@ class Gless(object):
         except StopIteration:
             print "Nothing to show"
             sys.exit(0)
-        chrom = self.reader.chr
+        chrom = self.reader.chrom
         while True:
             if self.needtodraw:
                 self.drawer.draw(self.content,chrom)
                 self.needtodraw = False
-                chrom = self.reader.chr
+                chrom = self.reader.chrom
             if self.drawer.keydown == chr(27): # "Esc" pressed: quit
                 sys.exit(0)
             elif self.drawer.keydown == ' ': # "Space" pressed: next
                 self.fast_forward()
             elif self.drawer.keydown == chr(127): # "BackSpace" ("Delete") pressed: return
                 self.return_to_beginning()
-                chrom = self.reader.chr
+                chrom = self.reader.chrom
             elif self.drawer.keydown == chr(37): # Left arrow pressed: shift left
                 self.slow_reward()
             elif self.drawer.keydown == chr(39): # Right arrow pressed: shift right
@@ -411,7 +400,7 @@ class Gless(object):
         self.load_next()
 
     def fast_forward(self):
-        if self.reader.chr_change:
+        if self.reader.chrom_change:
             self.reinit()
         else:
             self.reader.ntimes += 1
