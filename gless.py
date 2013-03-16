@@ -292,7 +292,7 @@ class Drawer(object):
                     x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
                     x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                     s = self.bp2px(float(s),self.htrack,top_bp)
-                    if f1 == 0: x1-=1
+                    if f1 == self.minpos: x1-=1
                     c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
 
     def draw_margin(self,chrom):
@@ -359,6 +359,7 @@ class Gless(object):
         chrom = self.reader.chrom
         while True:
             if self.needtodraw:
+                self.drawer.ntimes = self.reader.ntimes
                 self.drawer.draw(self.content,chrom)
                 self.needtodraw = False
                 chrom = self.reader.chrom
@@ -377,8 +378,8 @@ class Gless(object):
     def reinit(self):
         self.drawer.minpos = 0
         self.drawer.maxpos = 0
-        self.drawer.ntimes = 0
         self.reader.ntimes = 1
+        self.drawer.ntimes = 0
 
     def load_next(self):
         try:
