@@ -238,6 +238,7 @@ class Drawer(object):
                 self.keydown = chr(127)
                 self.root.quit()
                 pass # Return to the beginning
+        self.root.title("gless")
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
         self.minpos = self.maxpos if self.ntimes > 0 else 0
