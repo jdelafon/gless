@@ -14,16 +14,21 @@ class Parser(object):
         self.path = os.path.abspath(filename)
         self.format = os.path.splitext(filename)[1][1:]
         self.fields = ['chr','start','end','other']
+    def __enter__(self):
+        return self
+    def __exit__(self,errtype,value,traceback):
+        pass
     def read(self,fields=None,selection=None):
-        with open(self.filehandle) as f:
+        with open(self.path) as f:
             for line in f:
                 line = line.strip().split()
                 try:
                     chr,start,end = (line[0],int(line[1]),int(line[2]))
                 except (IndexError,ValueError):
-                    raise ValueError(("Library 'bbcflib' not found. "
-                                      "Only 'bed' and 'bedGraph' formats available "
-                                      "(got '%s')." % os.path.basename(self.filehandle)))
+                    sys.exit(("Library 'bbcflib' not found. "
+                              "Only 'bed' and 'bedGraph' formats available. "
+                              "Wrong line in file %s:\n%s"
+                              % (os.path.basename(self.path),'\t'.join(line)) ))
                 yield tuple(line)
 try:
     from bbcflib.btrack import track
@@ -94,18 +99,23 @@ class Reader(object):
         if self.sel:
             for i,stream in enumerate(streams):
                 try:
-                    chr,start,end = self.temp[i][:3]
-                    while chr != self.sel.get('chr',self.chrom) \
+                    chrom,start,end = self.temp[i][:3]
+                    while chrom != self.sel.get('chr',self.chrom) \
                     or not (self.sel.get('start',nosel)[0] < start < self.sel.get('start',nosel)[1]) \
                     or not (self.sel.get('end',nosel)[0] < end < self.sel.get('end',nosel)[1]):
                         self.temp[i] = stream.next()
-                        chr,start,end = self.temp[i][:3]
+                        chrom,start,end = self.temp[i][:3]
                         skipped += 1
                 except StopIteration:
                     self.temp[i] = (self.chrom,0,0,'00')
                     print "End of stream %i" % i
+            self.chrom = self.sel['chr']
             if self.nbp:
-                self.ntimes += min(x[1] for x in self.temp if x[3]!='00') / self.nbp
+                temppos = [x[1] for x in self.temp if x[3]!='00']
+                if temppos:
+                    self.ntimes += min(x[1] for x in self.temp if x[3]!='00') / self.nbp
+                else:
+                    sys.exit("Chromosome %s not found." % self.chrom)
             elif self.nfeat:
                 self.ntimes += skipped / self.nfeat
 
@@ -163,6 +173,7 @@ class Reader(object):
             # Load items within *nbp* in *toyield*
             for n in available_streams:
                 x = self.temp[n]
+                print x, self.chrom
                 while x[0] == self.chrom and x[2] <= maxpos:
                     toyield[n].append((x[1],x[2],x[3]))
                     try: x = streams[n].next()
@@ -181,7 +192,7 @@ class Reader(object):
                 self.chrom = chrom[0]
                 self.chrom_change = True
             if any(toyield):
-                #print "Toyield", toyield
+                print "Toyield", toyield
                 yield toyield
             else:
                 yield [[(0,0,'00')] for _ in streams]
