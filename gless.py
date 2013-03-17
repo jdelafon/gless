@@ -1,6 +1,8 @@
+#!/usr/bin/env python
 import Tkinter as tk
 import os,sys
 import argparse,re
+import csv
 
 ###############################################################################
 
@@ -17,8 +19,10 @@ class Parser(object):
         pass
     def read(self,fields=None,selection=None):
         with open(self.path) as f:
-            for line in f:
-                line = line.strip().split()
+            reader = csv.reader(f,delimiter='\t',quotechar='|')
+            for line in reader:
+            #for line in f:
+                #line = line.strip().split()
                 try:
                     chr,start,end = (line[0],int(line[1]),int(line[2]))
                 except (IndexError,ValueError):
@@ -130,7 +134,7 @@ class Reader(object):
                 nextitem = self.temp.pop(0)[0]
                 #if nextitem[2] >= minpos: # feature count is wrong
                 #    toyield[min_idx].append(nextitem[1:])
-                toyield[min_idx].append(nextitem[1:])
+                toyield[min_idx].append(nextitem[1:3]+(nextitem[3:] or ('00',)))
                 len_toyield += 1
                 try:
                     self.temp.append([streams[min_idx].next(),min_idx]) # read next item
@@ -148,7 +152,7 @@ class Reader(object):
                     maxpos = max(x[-1][1] for x in toyield if x)
                     for n,x in enumerate(self.temp):
                         if x[0][1] < maxpos:
-                            toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos),x[0][3]))
+                            toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos))+(x[0][3:] or ('00',)))
                             if x[0][2] > maxpos:
                                 self.temp[n][0] = (x[0][0],maxpos,x[0][2],x[0][3])
                 #print "Toyield", toyield
@@ -246,7 +250,7 @@ class Drawer(object):
         self.root.title("gless")
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
-        self.root.focus_set() # ?
+        self.root.focus_set() # not working?
         self.minpos = self.maxpos if self.ntimes > 0 else 0
         if self.nbp:
             self.maxpos = self.ntimes*self.nbp
@@ -316,7 +320,7 @@ class Drawer(object):
             elif type == 'density':
                 c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # baseline
                 if t:
-                    top_bp = self.fix[1] or max(float(x[2]) for x in t) # highest score
+                    top_bp = self.fix[1] if self.fix else max(float(x[2]) for x in t) # highest score
                     top = self.bp2px(top_bp,self.htrack,top_bp)
                     for k,feat in enumerate(t):
                         f1,f2,s = (feat[0],feat[1],feat[2])
