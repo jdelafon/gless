@@ -194,23 +194,24 @@ class Reader(object):
 
 class Drawer(object):
     def __init__(self,names,types,nfeat,nbp):
-        self.names = names
-        self.types = types
+        self.names = names # [file names]
+        self.types = types # ['intervals' or 'density']
         self.nfeat = nfeat
         self.nbp = nbp
-        self.ntimes = 0
-        self.maxpos = 0
-        self.minpos = 0
+        self.ntimes = 0    # number of times the draw function is called
+        self.maxpos = 0    # rightmost coordinate to display
+        self.minpos = 0    # leftmost coordinate to display
         self.keydown = ''
+        self.thisfeat = tk.Label()
         # Geometry
         self.root = tk.Tk()
-        self.WIDTH = 800
-        self.htrack = 30
-        self.rmargin = 100
-        self.feat_pad = 10
-        self.wlabel = 0
-        self.wcanvas = 0
-        self.reg_bp = 0
+        self.WIDTH = 800   # window width
+        self.htrack = 30   # canvas height
+        self.rmargin = 100 # width of the right margin
+        self.feat_pad = 10 # space between feat rectangles and the border of the canvas
+        self.wlabel = 0    # width of the left margin with the track names
+        self.wcanvas = 0   # width of the canvas
+        self.reg_bp = 0    # size of the genomic region to display, in bp
         # Colors
         self.bg = "grey"
         self.canvas_bg = "white"
@@ -261,10 +262,12 @@ class Drawer(object):
         self.root.mainloop()
 
     def bp2px(self,x,wwidth,reg_bp):
+        """Transform base pair coordinates to distances in pixels."""
         try: return x * wwidth/reg_bp
         except ZeroDivisionError: return 0
 
     def draw_labels(self):
+        """Write track names on the left."""
         for n,name in enumerate(self.names):
             l = tk.Label(self.root,text=self.names[n],bd=0,highlightthickness=0,bg=self.bg,padx=5)
             self.wlabel = max(l.winfo_reqwidth(),self.wlabel)
@@ -272,6 +275,29 @@ class Drawer(object):
         self.wcanvas = self.WIDTH-self.wlabel-self.rmargin
 
     def draw_tracks(self,content):
+        """Draw the canvas with the tracks in the middle."""
+        def show_feat_name(event):
+            w = tk.Label()
+            canvas = event.widget
+            x,y = event.x, event.y
+            closest = canvas.find_closest(x,y)
+            closest_coords = canvas.coords(closest)
+            if closest_coords[0] != 0: # the base line has x=0 and is often closer
+                print name_map[canvas][closest[0]], closest_coords
+                self.thisfeat.place(x=closest_coords[0]+self.wlabel,y=closest_coords[1])
+                #w.place(x=closest_coords[0]+self.wlabel,y=closest_coords[1])
+                w.place(x=x,y=y)
+                self.thisfeat.config(text=name_map[canvas][closest[0]], bg='red')
+                w.config(text=name_map[canvas][closest[0]], bg='red')
+                #self.thisfeat.place(x=0+self.wlabel,y=0)
+                print w.winfo_rootx(), w.winfo_rooty(), w.winfo_x(), w.winfo_y()
+                print self.thisfeat.winfo_rootx(), self.thisfeat.winfo_rooty()
+                w.lift()
+                self.thisfeat.lift()
+            else:
+                self.thisfeat.place_forget()
+                w.place_forget()
+        name_map = {} # correspondance canvas object id - feat name or score
         feat_thk = self.htrack - 2*self.feat_pad
         canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
                   for _ in self.names]
@@ -280,6 +306,8 @@ class Drawer(object):
             c = canvas[n]
             c.config(width=self.wcanvas)
             c.grid(row=n,column=1)
+            c.bind("<Motion>", show_feat_name)
+            name_map[c] = {}
             if type == 'intervals':
                 c.create_line(0,self.htrack/2.,self.WIDTH,self.htrack/2.,fill=self.line_col) # track axis
                 y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
@@ -288,7 +316,8 @@ class Drawer(object):
                     x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
                     x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                     if f1 == self.minpos: x1-=1 # no border
-                    c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
+                    r = c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
+                    name_map[c][r] = g
             elif type == 'density':
                 c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # baseline
                 if t:
@@ -300,20 +329,22 @@ class Drawer(object):
                         x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                         s = self.bp2px(float(s),self.htrack,top_bp)
                         if f1 == self.minpos: x1-=1 # no border
-                        c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
+                        r = c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
+                        name_map[c][r] = str(s)
                     c.create_line(0,self.htrack-top+5,5,self.htrack-top+5) # vertical scale
                     c.create_line(2,self.htrack,2,self.htrack-top+5) # vertical scale
                     c.create_text(6,self.htrack-top+5,text=str(top_bp),anchor='w')
 
     def draw_margin(self,chrom):
+        """Add a blank frame on the right as a margin, and the chromosome name."""
         w = tk.Label(text=chrom,bg='red')
         w.grid(row=0,column=2)
-        # Add a blank frame on the right as a margin
         for n in range(1,len(self.names)):
             w = tk.Frame(width=self.rmargin,height=self.htrack,bg=self.bg)
             w.grid(row=n,column=2)
 
     def draw_axis(self,content):
+        """Draw the horizontal scale."""
         c = tk.Canvas(self.root,width=self.wcanvas,height=2*self.htrack,bd=0,
                       bg=self.canvas_bg,highlightthickness=0)
         c.grid(row=len(self.names)+1,column=1)
@@ -338,13 +369,14 @@ class Drawer(object):
 ###############################################################################
 
 class Gless(object):
-    def __init__(self,trackList,nfeat,nbp,sel):
+    def __init__(self,trackList,nfeat,nbp,sel,fix):
         self.trackList = trackList
         self.names = [os.path.basename(t) for t in trackList]
         self.types = [self.get_type(n) for n in self.names]
         self.nfeat = nfeat
         self.nbp = nbp
         self.sel = sel
+        self.fix = fix
         self.stream = None
         self.content = None
         self.needtodraw = True
@@ -358,6 +390,11 @@ class Gless(object):
                 return 'intervals'
             elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
                 return 'density'
+
+    def get_score_limits(self,fix):
+        if not fix: return
+        if len(fix.split(','))==1: return (0,float(fix))
+        elif len(fix.split(','))==2: return tuple(fix.split(','))
 
     def __call__(self):
         """Main controller function."""
@@ -439,13 +476,17 @@ def main():
     parser.add_argument('-s','--sel', default=None,
                        help="Region to display, formatted as in 'chr1:12-34', or \
                              a chromosome only ('chr1').")
+    parser.add_argument('-f','--fix', default=None,
+                       help="Fixed range of scores for the vertical scale. One number \
+                            (e.g. -f 10) indicates the max; two numbers separated by a comma \
+                            (e.g. -f 5,10) indicate the min and max.")
     parser.add_argument('file', nargs='+', default=None,
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
     if args.nbp: args.nfeat = None
     elif args.nfeat and args.nfeat > 10000:
         print "Up to 10000 features permitted, got -n %s." % args.nfeat; sys.exit(1)
-    Gless(args.file,args.nfeat,args.nbp,args.sel)()
+    Gless(args.file,args.nfeat,args.nbp,args.sel,args.fix)()
 
 if __name__ == '__main__':
     sys.exit(main())
