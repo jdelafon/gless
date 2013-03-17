@@ -204,7 +204,6 @@ class Drawer(object):
         self.keydown = ''
         # Geometry
         self.root = tk.Tk()
-        self.thisfeat = tk.Label() # popup showing the name of the feat under the mouse pointer
         self.WIDTH = 800   # window width
         self.htrack = 30   # canvas height
         self.rmargin = 100 # width of the right margin
@@ -288,6 +287,7 @@ class Drawer(object):
                 self.thisfeat.lift()
             else:
                 self.thisfeat.place_forget()
+        self.thisfeat = tk.Label() # popup showing the name of the feat under the mouse pointer
         name_map = {} # correspondance canvas object id - feat name or score
         feat_thk = self.htrack - 2*self.feat_pad
         canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
