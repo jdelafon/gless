@@ -246,6 +246,7 @@ class Drawer(object):
         self.root.title("gless")
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
+        self.root.focus_set() # ?
         self.minpos = self.maxpos if self.ntimes > 0 else 0
         if self.nbp:
             self.maxpos = self.ntimes*self.nbp
