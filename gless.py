@@ -255,7 +255,7 @@ class Drawer(object):
         self.reg_bp = float(max(self.reg_bp,self.nbp))
         self.draw_labels()
         self.draw_tracks(content)
-        self.draw_margin(chrom)
+        self.draw_rmargin(chrom)
         self.draw_axis(content)
         self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
@@ -328,7 +328,7 @@ class Drawer(object):
                     c.create_line(2,self.htrack,2,self.htrack-top+5) # vertical scale
                     c.create_text(6,self.htrack-top+5,text=str(top_bp),anchor='w')
 
-    def draw_margin(self,chrom):
+    def draw_rmargin(self,chrom):
         """Add a blank frame on the right as a margin, and the chromosome name."""
         w = tk.Label(text=chrom,bg='red')
         w.grid(row=0,column=2)
