@@ -193,11 +193,12 @@ class Reader(object):
 ###############################################################################
 
 class Drawer(object):
-    def __init__(self,names,types,nfeat,nbp):
+    def __init__(self,names,types,nfeat,nbp,fix):
         self.names = names # [file names]
         self.types = types # ['intervals' or 'density']
         self.nfeat = nfeat
         self.nbp = nbp
+        self.fix = fix     # (limits,) for the range of the vertical scale
         self.ntimes = 0    # number of times the draw function is called
         self.maxpos = 0    # rightmost coordinate to display
         self.minpos = 0    # leftmost coordinate to display
@@ -314,23 +315,25 @@ class Drawer(object):
             elif type == 'density':
                 c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # baseline
                 if t:
-                    top_bp = max(float(x[2]) for x in t) # highest score
+                    top_bp = self.fix[1] or max(float(x[2]) for x in t) # highest score
                     top = self.bp2px(top_bp,self.htrack,top_bp)
                     for k,feat in enumerate(t):
                         f1,f2,s = (feat[0],feat[1],feat[2])
+                        s = float(s)-self.fix[0] if self.fix else float(s)
                         x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
                         x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
-                        s = self.bp2px(float(s),self.htrack,top_bp)
+                        s = self.bp2px(s,self.htrack,top_bp)
                         if f1 == self.minpos: x1-=1 # no border
-                        r = c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
-                        name_map[c][r] = str(s)
+                        if s > 0:
+                            r = c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
+                            name_map[c][r] = str(s)
                     c.create_line(0,self.htrack-top+5,5,self.htrack-top+5) # vertical scale
                     c.create_line(2,self.htrack,2,self.htrack-top+5) # vertical scale
                     c.create_text(6,self.htrack-top+5,text=str(top_bp),anchor='w')
 
     def draw_rmargin(self,chrom):
         """Add a blank frame on the right as a margin, and the chromosome name."""
-        w = tk.Label(text=chrom,bg='red')
+        w = tk.Label(text=chrom,bg='white')
         w.grid(row=0,column=2)
         for n in range(1,len(self.names)):
             w = tk.Frame(width=self.rmargin,height=self.htrack,bg=self.bg)
@@ -364,17 +367,17 @@ class Drawer(object):
 class Gless(object):
     def __init__(self,trackList,nfeat,nbp,sel,fix):
         self.trackList = trackList
-        self.names = [os.path.basename(t) for t in trackList]
-        self.types = [self.get_type(n) for n in self.names]
         self.nfeat = nfeat
         self.nbp = nbp
         self.sel = sel
-        self.fix = fix
+        self.names = [os.path.basename(t) for t in trackList]
+        self.types = [self.get_type(n) for n in self.names]
         self.stream = None
         self.content = None
         self.needtodraw = True
+        fix = self.get_score_limits(fix)
         self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
-        self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp)
+        self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp,fix)
 
     def get_type(self,filename):
         """Return whether it is a track with 'intervals' or a 'density'."""
@@ -386,8 +389,9 @@ class Gless(object):
 
     def get_score_limits(self,fix):
         if not fix: return
-        if len(fix.split(','))==1: return (0,float(fix))
-        elif len(fix.split(','))==2: return tuple(fix.split(','))
+        elif len(fix.split(','))==1: return (0,float(fix))
+        elif len(fix.split(','))==2: return tuple(float(x) for x in fix.split(','))
+        else: sys.exit("Wrong format for -f option: got %s." % fix)
 
     def __call__(self):
         """Main controller function."""
