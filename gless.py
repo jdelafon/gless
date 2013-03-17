@@ -204,6 +204,7 @@ class Drawer(object):
         self.keydown = ''
         # Geometry
         self.root = tk.Tk()
+        self.thisfeat = tk.Label() # popup showing the name of the feat under the mouse pointer
         self.WIDTH = 800   # window width
         self.htrack = 30   # canvas height
         self.rmargin = 100 # width of the right margin
@@ -281,14 +282,12 @@ class Drawer(object):
             closest = canvas.find_closest(x,y)
             closest_coords = canvas.coords(closest)
             if closest_coords[0] != 0: # the base line has x=0 and is often closer
-                print name_map[canvas][closest[0]], closest_coords
-                self.thisfeat.place(x=closest_coords[0]+self.wlabel,y=closest_coords[1],anchor='w')
+                self.thisfeat.place(x=closest_coords[0]+self.wlabel,
+                                    y=closest_coords[1]+canvas.winfo_y(), anchor='w')
                 self.thisfeat.config(text=name_map[canvas][closest[0]], bg='red')
                 self.thisfeat.lift()
             else:
                 self.thisfeat.place_forget()
-
-        self.thisfeat = tk.Label()
         name_map = {} # correspondance canvas object id - feat name or score
         feat_thk = self.htrack - 2*self.feat_pad
         canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
