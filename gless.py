@@ -55,7 +55,7 @@ class Memory(object):
 class Reader(object):
     def __init__(self,trackList,nfeat,nbp,sel):
         self.tracks = [track(t) for t in trackList]
-        self.sel = self.parse_selection(sel)
+        self.sel = sel
         self.chrom = self.init_chr()
         self.temp = []
         self.chrom_change = False
@@ -66,16 +66,6 @@ class Reader(object):
         elif nfeat:
             self.nfeat = nfeat
             self.nbp = None
-
-    def parse_selection(self,sel):
-        if not sel: return None
-        elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
-            chr,coord = sel.split(':')
-            st,en = coord.split('-')
-            return {'chr':chr,'start':(int(st),int(en)),'end':(int(st),int(en))}
-        elif re.search('^chr[0-9XY]*$',sel):
-            return {'chr':sel}
-        else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
 
     def init_chr(self):
         for t in self.tracks:
@@ -197,11 +187,12 @@ class Reader(object):
 ###############################################################################
 
 class Drawer(object):
-    def __init__(self,names,types,nfeat,nbp,fix):
+    def __init__(self,names,types,nfeat,nbp,sel,fix):
         self.names = names # [file names]
         self.types = types # ['intervals' or 'density']
         self.nfeat = nfeat
         self.nbp = nbp
+        self.sel = sel     # selection, of the type {'chr':'chr1','start':(1,1),'end':(2,2)}
         self.fix = fix     # (limits,) for the range of the vertical scale
         self.ntimes = 0    # number of times the draw function is called
         self.maxpos = 0    # rightmost coordinate to display
@@ -251,11 +242,14 @@ class Drawer(object):
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
         self.root.focus_set() # not working?
-        self.minpos = self.maxpos if self.ntimes > 0 else 0
         if self.nbp:
+            self.minpos = (self.ntimes-1)*self.nbp
             self.maxpos = self.ntimes*self.nbp
             self.reg_bp = self.maxpos - self.minpos
         elif self.nfeat:
+            if self.ntimes > 0 and self.maxpos > 0: self.minpos = self.maxpos
+            elif self.sel and self.maxpos == 0: self.minpos = self.sel['start'][0]
+            else: self.minpos = max(0, min(t[-1][0] for t in content if t))
             self.maxpos = max(t[-1][1] for t in content if t)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
@@ -374,7 +368,7 @@ class Gless(object):
         self.trackList = trackList
         self.nfeat = nfeat
         self.nbp = nbp
-        self.sel = sel
+        self.sel = self.parse_selection(sel)
         self.names = [os.path.basename(t) for t in trackList]
         self.types = [self.get_type(n) for n in self.names]
         self.stream = None
@@ -382,7 +376,7 @@ class Gless(object):
         self.needtodraw = True
         fix = self.get_score_limits(fix)
         self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
-        self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp,fix)
+        self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp,self.reader.sel,fix)
 
     def get_type(self,filename):
         """Return whether it is a track with 'intervals' or a 'density'."""
@@ -391,6 +385,16 @@ class Gless(object):
                 return 'intervals'
             elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
                 return 'density'
+
+    def parse_selection(self,sel):
+        if not sel: return None
+        elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
+            chr,coord = sel.split(':')
+            st,en = coord.split('-')
+            return {'chr':chr,'start':(int(st),int(en)),'end':(int(st),int(en))}
+        elif re.search('^chr[0-9XY]*$',sel):
+            return {'chr':sel}
+        else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
 
     def get_score_limits(self,fix):
         if not fix: return
