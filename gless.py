@@ -298,7 +298,7 @@ class Drawer(object):
             type = self.types[n]
             c = canvas[n]
             c.config(width=self.wcanvas)
-            c.grid(row=n,column=1)
+            c.grid(row=n,column=1,pady=5)
             c.bind("<Motion>", show_feat_name)
             name_map[c] = {}
             if type == 'intervals':
@@ -312,23 +312,28 @@ class Drawer(object):
                     r = c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
                     name_map[c][r] = g
             elif type == 'density':
-                c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # baseline
+                hi = 2*self.htrack
+                c.config(height=hi)
+                c.create_line(0,hi-1,self.WIDTH,hi-1,fill=self.line_col) # baseline
                 if t:
                     top_bp = self.fix[1] if self.fix else max(float(x[2]) for x in t) # highest score
-                    top = self.bp2px(top_bp,self.htrack,top_bp)
+                    top = self.bp2px(top_bp,hi,top_bp)
                     for k,feat in enumerate(t):
                         f1,f2,s = (feat[0],feat[1],feat[2])
                         s = float(s)-self.fix[0] if self.fix else float(s)
                         x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
                         x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
-                        s = self.bp2px(s,self.htrack,top_bp)
+                        s = self.bp2px(s,hi,top_bp)
                         if f1 == self.minpos: x1-=1 # no border
                         if s > 0:
-                            r = c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
+                            r = c.create_rectangle(x1,hi-1,x2,hi-s+5,fill=self.dens_col)
                             name_map[c][r] = str(s)
-                    c.create_line(0,self.htrack-top+5,5,self.htrack-top+5) # vertical scale
-                    c.create_line(2,self.htrack,2,self.htrack-top+5) # vertical scale
-                    c.create_text(6,self.htrack-top+5,text=str(top_bp),anchor='w')
+                    c.create_line(0,hi-top+5,5,hi-top+5) # vertical scale
+                    c.create_line(2,hi,2,hi-top+5) # vertical scale
+                    c.create_text(6,hi-top+5,text=str(top_bp),anchor='w')
+        back = tk.Frame(self.root,bg=self.canvas_bg,width=self.wcanvas) # blank background
+        back.grid(column=1,row=0,rowspan=len(self.names),sticky=["N","S"])
+        back.lower()
 
     def draw_rmargin(self,chrom):
         """Add a blank frame on the right as a margin, and the chromosome name."""
