@@ -202,7 +202,6 @@ class Drawer(object):
         self.maxpos = 0    # rightmost coordinate to display
         self.minpos = 0    # leftmost coordinate to display
         self.keydown = ''
-        self.thisfeat = tk.Label()
         # Geometry
         self.root = tk.Tk()
         self.WIDTH = 800   # window width
@@ -277,26 +276,19 @@ class Drawer(object):
     def draw_tracks(self,content):
         """Draw the canvas with the tracks in the middle."""
         def show_feat_name(event):
-            w = tk.Label()
             canvas = event.widget
             x,y = event.x, event.y
             closest = canvas.find_closest(x,y)
             closest_coords = canvas.coords(closest)
             if closest_coords[0] != 0: # the base line has x=0 and is often closer
                 print name_map[canvas][closest[0]], closest_coords
-                self.thisfeat.place(x=closest_coords[0]+self.wlabel,y=closest_coords[1])
-                #w.place(x=closest_coords[0]+self.wlabel,y=closest_coords[1])
-                w.place(x=x,y=y)
+                self.thisfeat.place(x=closest_coords[0]+self.wlabel,y=closest_coords[1],anchor='w')
                 self.thisfeat.config(text=name_map[canvas][closest[0]], bg='red')
-                w.config(text=name_map[canvas][closest[0]], bg='red')
-                #self.thisfeat.place(x=0+self.wlabel,y=0)
-                print w.winfo_rootx(), w.winfo_rooty(), w.winfo_x(), w.winfo_y()
-                print self.thisfeat.winfo_rootx(), self.thisfeat.winfo_rooty()
-                w.lift()
                 self.thisfeat.lift()
             else:
                 self.thisfeat.place_forget()
-                w.place_forget()
+
+        self.thisfeat = tk.Label()
         name_map = {} # correspondance canvas object id - feat name or score
         feat_thk = self.htrack - 2*self.feat_pad
         canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
