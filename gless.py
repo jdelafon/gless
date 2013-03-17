@@ -279,12 +279,13 @@ class Drawer(object):
             canvas = event.widget
             x,y = event.x, event.y
             closest = canvas.find_closest(x,y)
-            closest_coords = canvas.coords(closest)
-            # the base line has x=0 and is often closer
-            if closest_coords[0] != 0 and canvas.type(closest)=='rectangle':
-                self.thisfeat.place(x=closest_coords[0]+self.wlabel,
-                                    y=closest_coords[1]+canvas.winfo_y(), anchor='w')
-                self.thisfeat.config(text=name_map[canvas][closest[0]], bg='red')
+            if canvas.type(closest)=='rectangle':
+                x1,y1,x2,y2 = canvas.coords(closest)
+                # the base line has x=0 and is often closer
+                self.thisfeat.place(x=x1+self.wlabel+(x2-x1)/2.,
+                                    y=y1+canvas.winfo_y()+(y2-y1)/2., anchor='center')
+                self.thisfeat.config(text=name_map[canvas][closest[0]],
+                     bd=1,highlightbackground="black",highlightthickness=1)
                 self.thisfeat.lift()
             else:
                 self.thisfeat.place_forget()
