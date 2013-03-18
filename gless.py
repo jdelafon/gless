@@ -247,9 +247,9 @@ class Drawer(object):
             self.maxpos = self.ntimes*self.nbp
             self.reg_bp = self.maxpos - self.minpos
         elif self.nfeat:
-            if self.ntimes > 0 and self.maxpos > 0: self.minpos = self.maxpos
+            if self.ntimes > 1 and self.maxpos > 0: self.minpos = self.maxpos
             elif self.sel and self.maxpos == 0: self.minpos = self.sel['start'][0]
-            else: self.minpos = max(0, min(t[-1][0] for t in content if t))
+            else: self.minpos = max(0, min(t[0][0] for t in content if t))
             self.maxpos = max(t[-1][1] for t in content if t)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
@@ -357,6 +357,7 @@ class Drawer(object):
                 x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                 c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
                 c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
+                # Need to not write overlapping pos
                 if f1!=self.minpos and f1!=self.maxpos:
                     c.create_text(x1,pad-5,text=str(f1),anchor='s')
                 if f2!=self.minpos and f2!=self.maxpos:
@@ -445,8 +446,8 @@ class Gless(object):
                 w.destroy()
         except StopIteration:
             print "End of file"
-            self.reader.ntimes -= 1
-            self.drawer.ntimes -= 1
+            #self.reader.ntimes -= 1
+            #self.drawer.ntimes -= 1
         self.needtodraw = True
         for w in self.drawer.root.children.values(): # Clear the window
             w.destroy()
