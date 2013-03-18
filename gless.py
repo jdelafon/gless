@@ -108,6 +108,51 @@ class Reader(object):
             elif self.nfeat:
                 self.ntimes += skipped / self.nfeat
 
+    def read_nfeat2(self,streams):
+        available_streams = range(len(streams))
+        self.temp = [[x,k] for k,x in enumerate(self.temp)]
+        sortkey = lambda x:(x[0][1],x[0][0])
+        self.chrom_change = False
+        # Repeat & yield each time the function is called
+        while available_streams:
+            self.chrom_change = False
+            toyield = [[] for _ in streams]
+            len_toyield = 0
+            # Load *nfeat* feats of each track in the buffer
+            for k in available_streams:
+                for n in range(self.nfeats-1):
+                    try: self.temp.append((streams[k].next(),k))
+                    except StopIteration: break
+            # Load *nfeat* in *toyield*
+            while len_toyield < self.nfeat and self.temp:
+                self.temp.sort(key=sortkey) # sort by end position
+            #    min_idx = self.temp[0][-1]
+            #    nextitem = self.temp.pop(0)[0]
+            #    toyield[min_idx].append(nextitem[1:3]+(nextitem[3:] or ('00',)))
+            #    len_toyield += 1
+            #    try:
+            #        self.temp.append([streams[min_idx].next(),min_idx]) # read next item
+            #        chrom = self.temp[0][0][0]
+            #        if chrom != self.chrom:
+            #            self.chrom_change = True
+            #            self.next_chrom = chrom
+            #            break
+            #    except StopIteration:
+            #        try: available_streams.pop(min_idx)
+            #        except IndexError: continue
+            #if any(toyield):
+            #    # Add feats that go partially beyond
+            #    if not self.chrom_change:
+            #        maxpos = max(x[-1][1] for x in toyield if x)
+            #        for n,x in enumerate(self.temp):
+            #            if x[0][1] < maxpos:
+            #                toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos))+(x[0][3:] or ('00',)))
+            #                if x[0][2] > maxpos:
+            #                    self.temp[n][0] = (x[0][0],maxpos,x[0][2],x[0][3])
+            #    #print "Toyield", toyield
+            #    yield toyield
+            #else: break
+
     def read_nfeat(self,streams):
         available_streams = range(len(streams))
         self.temp = [[x,k] for k,x in enumerate(self.temp)]
