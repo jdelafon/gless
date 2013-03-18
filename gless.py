@@ -56,9 +56,10 @@ class Reader(object):
     def __init__(self,trackList,nfeat,nbp,sel):
         self.tracks = [track(t) for t in trackList]
         self.sel = sel
-        self.chrom = self.init_chr()
         self.temp = []
+        self.chrom = self.init_chr()
         self.chrom_change = False
+        self.next_chrom = self.chrom
         self.ntimes = 1
         if nbp:
             self.nbp = nbp
@@ -87,7 +88,7 @@ class Reader(object):
         nosel = (0,sys.maxint)
         skipped = 0
         self.temp = [s.next() for s in streams]
-        if self.sel:
+        if self.sel and self.ntimes == 1:
             for i,stream in enumerate(streams):
                 try:
                     chrom,start,end = self.temp[i][:3]
@@ -122,8 +123,6 @@ class Reader(object):
                 self.temp.sort(key=sortkey)
                 min_idx = self.temp[0][-1]
                 nextitem = self.temp.pop(0)[0]
-                #if nextitem[2] >= minpos: # feature count is wrong
-                #    toyield[min_idx].append(nextitem[1:])
                 toyield[min_idx].append(nextitem[1:3]+(nextitem[3:] or ('00',)))
                 len_toyield += 1
                 try:
@@ -131,7 +130,7 @@ class Reader(object):
                     chrom = self.temp[0][0][0]
                     if chrom != self.chrom:
                         self.chrom_change = True
-                        self.chrom = chrom
+                        self.next_chrom = chrom
                         break
                 except StopIteration:
                     try: available_streams.pop(min_idx)
@@ -176,13 +175,14 @@ class Reader(object):
                 self.temp[n] = x
             for n in toremove: available_streams.remove(n)
             if all(chrom[n] != self.chrom for n in available_streams):
-                self.chrom = chrom[0]
+                self.next_chrom = chrom[0]
                 self.chrom_change = True
             if any(toyield):
                 #print "Toyield", toyield
                 yield toyield
             else:
                 yield [[(0,0,'00')] for _ in streams]
+
 
 ###############################################################################
 
@@ -430,6 +430,7 @@ class Gless(object):
                 self.drawer.ntimes = self.reader.ntimes
                 self.drawer.draw(self.content,chrom)
                 self.needtodraw = False
+                self.reader.chrom = self.reader.next_chrom
                 chrom = self.reader.chrom
             if self.drawer.keydown == chr(27): # "Esc" pressed: quit
                 sys.exit(0)
