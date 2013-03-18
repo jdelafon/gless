@@ -243,14 +243,23 @@ class Drawer(object):
         self.root.config(bg=self.bg)
         self.root.focus_set() # not working?
         if self.nbp:
-            self.minpos = (self.ntimes-1)*self.nbp
-            self.maxpos = self.ntimes*self.nbp
-            self.reg_bp = self.maxpos - self.minpos
+            if self.sel.get('start') and self.maxpos == 0:
+                self.minpos = self.sel['start'][0]
+                self.maxpos = self.sel['end'][1]
+            else:
+                self.minpos = (self.ntimes-1)*self.nbp
+                self.maxpos = self.ntimes*self.nbp
+                self.reg_bp = self.maxpos - self.minpos
         elif self.nfeat:
-            if self.ntimes > 1 and self.maxpos > 0: self.minpos = self.maxpos
-            elif self.sel and self.maxpos == 0: self.minpos = self.sel['start'][0]
-            else: self.minpos = max(0, min(t[0][0] for t in content if t))
-            self.maxpos = max(t[-1][1] for t in content if t)
+            if self.ntimes > 1 and self.maxpos > 0:
+                self.minpos = self.maxpos
+                self.maxpos = max(t[-1][1] for t in content if t)
+            elif self.sel.get('start') and self.maxpos == 0:
+                self.minpos = self.sel['start'][0]
+                self.maxpos = self.sel['end'][1]
+            else:
+                self.minpos = max(0, min(t[0][0] for t in content if t))
+                self.maxpos = max(t[-1][1] for t in content if t)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
         self.draw_labels()
