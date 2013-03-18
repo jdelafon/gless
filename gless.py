@@ -243,7 +243,7 @@ class Drawer(object):
         self.root.config(bg=self.bg)
         self.root.focus_set() # not working?
         if self.nbp:
-            if self.sel.get('start') and self.maxpos == 0:
+            if self.sel and self.sel.get('start') and self.maxpos == 0:
                 self.minpos = self.sel['start'][0]
                 self.maxpos = self.sel['end'][1]
             else:
@@ -254,7 +254,7 @@ class Drawer(object):
             if self.ntimes > 1 and self.maxpos > 0:
                 self.minpos = self.maxpos
                 self.maxpos = max(t[-1][1] for t in content if t)
-            elif self.sel.get('start') and self.maxpos == 0:
+            elif self.sel and self.sel.get('start') and self.maxpos == 0:
                 self.minpos = self.sel['start'][0]
                 self.maxpos = self.sel['end'][1]
             else:
@@ -512,15 +512,12 @@ def main():
 if __name__ == '__main__':
     sys.exit(main())
 
-# python gless.py -b 20 testing_files/test1.bed testing_files/test2.bed testing_files/test1.bedgraph testing_files/test2.bedgraph testing_files/yeast_genes.bed
 
 
 #fuckinfile = "/Users/julien/Library/Saved Application State/org.python.python.savedState"
 #os.chmod(fuckinfile,0o777)
 #os.remove(fuckinfile) # bug on osx
 
-#trackList = ['testing_files/test1.bed','testing_files/test2.bed']
-#root.focus_set()
 #print c.winfo_reqheight(), c.winfo_reqwidth()
 #print c.winfo_width(), c.winfo_height()
 #bg = "#%02x%02x%02x" % (255, 255, 224) #beige background
