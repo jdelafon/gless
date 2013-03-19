@@ -20,21 +20,25 @@ class Parser(object):
     def read(self,fields=None,selection=None):
         with open(self.path) as f:
             reader = csv.reader(f,delimiter='\t',quotechar='|')
+            line0 = reader.next()
+            nfields = len(line0)
+            if not line0[0].startswith("track") or line0[0].startswith("#"): f.seek(0)
+            fun = float if self.format.lower()=='bedgraph' else lambda x:x
             for line in reader:
-            #for line in f:
-                #line = line.strip().split()
                 try:
                     chr,start,end = (line[0],int(line[1]),int(line[2]))
+                    other = fun(line[3]) if nfields > 3 else "00"
                 except (IndexError,ValueError):
                     sys.exit(("Library 'bbcflib' not found. "
                               "Only 'bed' and 'bedGraph' formats available. "
                               "Wrong line in file %s:\n%s"
                               % (os.path.basename(self.path),'\t'.join(line)) ))
-                yield tuple(line)
+                yield (chr,start,end,other)
 try:
     from bbcflib.btrack import track
     assert track
 except ImportError:
+    print "Custom parser"
     track = Parser
 
 ###############################################################################
@@ -276,7 +280,7 @@ class Drawer(object):
         self.draw_tracks(content)
         self.draw_rmargin(chrom)
         self.draw_axis(content)
-        self.root.wm_attributes("-topmost", 1) # makes the window stay on top
+        #self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
 
     def bp2px(self,x,wwidth,reg_bp):
