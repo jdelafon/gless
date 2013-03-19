@@ -276,7 +276,7 @@ class Drawer(object):
         self.draw_tracks(content)
         self.draw_rmargin(chrom)
         self.draw_axis(content)
-        self.root.wm_attributes("-topmost", 1) # makes the window stay on top
+        #self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
 
     def bp2px(self,x,wwidth,reg_bp):
