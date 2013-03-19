@@ -119,9 +119,7 @@ class Reader(object):
             for _ in range(self.nfeat-1):
                 try:
                     self.temp.append([streams[n].next(),n])
-                    print self.temp[-1]
                 except StopIteration:
-                    print self.tracks[n].path
                     toremove.append(n)
                     break
         for n in toremove: available_streams.remove(n)
