@@ -43,6 +43,7 @@ Known issues:
 * If -b/-n and -s are specified, the length of the selection window is used instead
   of the -b/-n options.
 """
+
 import Tkinter as tk
 import os,sys
 import argparse,re
@@ -239,7 +240,6 @@ class Reader(object):
                 yield toyield
             else:
                 yield [[(0,0,'00')] for _ in streams]
-
 
 ###############################################################################
 
@@ -575,8 +575,5 @@ if __name__ == '__main__':
 #------------------------------------------------------#
 # This code was written by Julien Delafontaine         #
 # Bioinformatics and Biostatistics Core Facility, EPFL #
-# http://bbcf.epfl.ch/                                 #
-# webmaster.bbcf@epfl.ch                               #
+# julien.delafontaine@epfl.ch                          #
 #------------------------------------------------------#
-
-
