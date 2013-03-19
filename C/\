@@ -1,8 +1,9 @@
-#!/usr/bin/env python
 import Tkinter as tk
 import os,sys
 import argparse,re
-import csv
+#fuckinfile = "/Users/julien/Library/Saved Application State/org.python.python.savedState"
+#os.chmod(fuckinfile,0o777)
+#os.remove(fuckinfile) # bug on osx
 
 ###############################################################################
 
@@ -19,10 +20,8 @@ class Parser(object):
         pass
     def read(self,fields=None,selection=None):
         with open(self.path) as f:
-            reader = csv.reader(f,delimiter='\t',quotechar='|')
-            for line in reader:
-            #for line in f:
-                #line = line.strip().split()
+            for line in f:
+                line = line.strip().split()
                 try:
                     chr,start,end = (line[0],int(line[1]),int(line[2]))
                 except (IndexError,ValueError):
@@ -55,11 +54,10 @@ class Memory(object):
 class Reader(object):
     def __init__(self,trackList,nfeat,nbp,sel):
         self.tracks = [track(t) for t in trackList]
-        self.sel = sel
-        self.temp = []
+        self.sel = self.parse_selection(sel)
         self.chrom = self.init_chr()
+        self.temp = []
         self.chrom_change = False
-        self.next_chrom = self.chrom
         self.ntimes = 1
         if nbp:
             self.nbp = nbp
@@ -67,6 +65,16 @@ class Reader(object):
         elif nfeat:
             self.nfeat = nfeat
             self.nbp = None
+
+    def parse_selection(self,sel):
+        if not sel: return None
+        elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
+            chr,coord = sel.split(':')
+            st,en = coord.split('-')
+            return {'chr':chr,'start':(int(st),int(en)),'end':(int(st),int(en))}
+        elif re.search('^chr[0-9XY]*$',sel):
+            return {'chr':sel}
+        else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
 
     def init_chr(self):
         for t in self.tracks:
@@ -88,7 +96,7 @@ class Reader(object):
         nosel = (0,sys.maxint)
         skipped = 0
         self.temp = [s.next() for s in streams]
-        if self.sel and self.ntimes == 1:
+        if self.sel:
             for i,stream in enumerate(streams):
                 try:
                     chrom,start,end = self.temp[i][:3]
@@ -110,61 +118,42 @@ class Reader(object):
 
     def read_nfeat(self,streams):
         available_streams = range(len(streams))
-        self.temp = [[x,n] for n,x in enumerate(self.temp)]
+        self.temp = [[x,k] for k,x in enumerate(self.temp)]
+        sortkey = lambda x:(x[0][0],x[0][1])
         self.chrom_change = False
-        sortkey = lambda x:(x[0][0],x[0][2]) # sort by chr, then end
-        toremove = []
-        # Load *nfeat* feats of each track in the buffer
-        for n in available_streams:
-            for _ in range(self.nfeat-1):
-                try:
-                    self.temp.append([streams[n].next(),n])
-                    print self.temp[-1]
-                except StopIteration:
-                    print self.tracks[n].path
-                    toremove.append(n)
-                    break
-        for n in toremove: available_streams.remove(n)
         # Repeat & yield each time the function is called
-        while self.temp:
+        while available_streams:
             self.chrom_change = False
             toyield = [[] for _ in streams]
             len_toyield = 0
             # Load *nfeat* in *toyield*
-            while len_toyield < self.nfeat:
+            while len_toyield < self.nfeat and self.temp:
                 self.temp.sort(key=sortkey)
-                for x,n in self.temp[:self.nfeat]:
-                    if x[0] == self.chrom:
-                        toyield[n].append( x[1:3]+(x[3:] or ('00',)) )
-                        len_toyield += 1
-                        # Reload the buffer with one element for each element read,
-                        # so there are always *nfeat* x ntracks elements
-                        try: self.temp.append([streams[n].next(),n])
-                        except StopIteration:
-                            try: available_streams.remove(n)
-                            except ValueError: continue
-                    else: # No more feats for this chromosome
+                min_idx = self.temp[0][-1]
+                nextitem = self.temp.pop(0)[0]
+                #if nextitem[2] >= minpos: # feature count is wrong
+                #    toyield[min_idx].append(nextitem[1:])
+                toyield[min_idx].append(nextitem[1:])
+                len_toyield += 1
+                try:
+                    self.temp.append([streams[min_idx].next(),min_idx]) # read next item
+                    chrom = self.temp[0][0][0]
+                    if chrom != self.chrom:
                         self.chrom_change = True
-                        self.next_chrom = x[0]
+                        self.chrom = chrom
                         break
-                self.temp = self.temp[len_toyield:]
-                if self.chrom_change: break
-                if not self.temp: break
-                elif self.temp[0][0][0] != self.chrom:
-                    self.chrom_change = True
-                    self.next_chrom = self.temp[0][0][0]
+                except StopIteration:
+                    try: available_streams.pop(min_idx)
+                    except IndexError: continue
             if any(toyield):
                 # Add feats that go partially beyond
-                maxpos = max(x[-1][1] for x in toyield if x)
-                unseen = list(available_streams) # copy
-                for k,feat in enumerate(self.temp):
-                    x,n = feat
-                    if x[0] != self.chrom: break
-                    if n in unseen and x[1] < maxpos:
-                        toyield[n].append( (x[1],min(x[2],maxpos))+(x[3:] or ('00',)) )
-                        self.temp[k][0] = (x[0],maxpos,x[2])+x[3:]
-                        unseen.remove(n)
-                    if not unseen: break
+                if not self.chrom_change:
+                    maxpos = max(x[-1][1] for x in toyield if x)
+                    for n,x in enumerate(self.temp):
+                        if x[0][1] < maxpos:
+                            toyield[x[-1]].append((x[0][1],min(x[0][2],maxpos),x[0][3]))
+                            if x[0][2] > maxpos:
+                                self.temp[n][0] = (x[0][0],maxpos,x[0][2],x[0][3])
                 #print "Toyield", toyield
                 yield toyield
             else: break
@@ -196,38 +185,35 @@ class Reader(object):
                 self.temp[n] = x
             for n in toremove: available_streams.remove(n)
             if all(chrom[n] != self.chrom for n in available_streams):
-                self.next_chrom = chrom[0]
+                self.chrom = chrom[0]
                 self.chrom_change = True
             if any(toyield):
-                #print "Toyield", toyield
+                print "Toyield", toyield
                 yield toyield
             else:
                 yield [[(0,0,'00')] for _ in streams]
 
-
 ###############################################################################
 
 class Drawer(object):
-    def __init__(self,names,types,nfeat,nbp,sel,fix):
-        self.names = names # [file names]
-        self.types = types # ['intervals' or 'density']
+    def __init__(self,names,types,nfeat,nbp):
+        self.names = names
+        self.types = types
         self.nfeat = nfeat
         self.nbp = nbp
-        self.sel = sel     # selection, of the type {'chr':'chr1','start':(1,1),'end':(2,2)}
-        self.fix = fix     # (limits,) for the range of the vertical scale
-        self.ntimes = 0    # number of times the draw function is called
-        self.maxpos = 0    # rightmost coordinate to display
-        self.minpos = 0    # leftmost coordinate to display
+        self.ntimes = 0
+        self.maxpos = 0
+        self.minpos = 0
         self.keydown = ''
         # Geometry
         self.root = tk.Tk()
-        self.WIDTH = 800   # window width
-        self.htrack = 30   # canvas height
-        self.rmargin = 100 # width of the right margin
-        self.feat_pad = 10 # space between feat rectangles and the border of the canvas
-        self.wlabel = 0    # width of the left margin with the track names
-        self.wcanvas = 0   # width of the canvas
-        self.reg_bp = 0    # size of the genomic region to display, in bp
+        self.WIDTH = 800
+        self.htrack = 30
+        self.rmargin = 100
+        self.feat_pad = 10
+        self.wlabel = 0
+        self.wcanvas = 0
+        self.reg_bp = 0
         # Colors
         self.bg = "grey"
         self.canvas_bg = "white"
@@ -262,41 +248,26 @@ class Drawer(object):
         self.root.title("gless")
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
-        self.root.focus_set() # not working?
+        self.minpos = self.maxpos if self.ntimes > 0 else 0
         if self.nbp:
-            if self.sel and self.sel.get('start') and self.maxpos == 0:
-                self.minpos = self.sel['start'][0]
-                self.maxpos = self.sel['end'][1]
-            else:
-                self.minpos = (self.ntimes-1)*self.nbp
-                self.maxpos = self.ntimes*self.nbp
-                self.reg_bp = self.maxpos - self.minpos
+            self.maxpos = self.ntimes*self.nbp
+            self.reg_bp = self.maxpos - self.minpos
         elif self.nfeat:
-            if self.ntimes > 1 and self.maxpos > 0:
-                self.minpos = self.maxpos
-                self.maxpos = max(t[-1][1] for t in content if t)
-            elif self.sel and self.sel.get('start') and self.maxpos == 0:
-                self.minpos = self.sel['start'][0]
-                self.maxpos = self.sel['end'][1]
-            else:
-                self.minpos = max(0, min(t[0][0] for t in content if t))
-                self.maxpos = max(t[-1][1] for t in content if t)
+            self.maxpos = max(t[-1][1] for t in content if t)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
         self.draw_labels()
         self.draw_tracks(content)
-        self.draw_rmargin(chrom)
+        self.draw_margin(chrom)
         self.draw_axis(content)
         self.root.wm_attributes("-topmost", 1) # makes the window stay on top
         self.root.mainloop()
 
     def bp2px(self,x,wwidth,reg_bp):
-        """Transform base pair coordinates to distances in pixels."""
         try: return x * wwidth/reg_bp
         except ZeroDivisionError: return 0
 
     def draw_labels(self):
-        """Write track names on the left."""
         for n,name in enumerate(self.names):
             l = tk.Label(self.root,text=self.names[n],bd=0,highlightthickness=0,bg=self.bg,padx=5)
             self.wlabel = max(l.winfo_reqwidth(),self.wlabel)
@@ -304,23 +275,6 @@ class Drawer(object):
         self.wcanvas = self.WIDTH-self.wlabel-self.rmargin
 
     def draw_tracks(self,content):
-        """Draw the canvas with the tracks in the middle."""
-        def show_feat_name(event):
-            canvas = event.widget
-            x,y = event.x, event.y
-            closest = canvas.find_closest(x,y)
-            if canvas.type(closest)=='rectangle':
-                x1,y1,x2,y2 = canvas.coords(closest)
-                # the base line has x=0 and is often closer
-                self.thisfeat.place(x=x1+self.wlabel+(x2-x1)/2.,
-                                    y=y1+canvas.winfo_y()+(y2-y1)/2., anchor='center')
-                self.thisfeat.config(text=name_map[canvas][closest[0]],
-                     bd=1,highlightbackground="black",highlightthickness=1)
-                self.thisfeat.lift()
-            else:
-                self.thisfeat.place_forget()
-        self.thisfeat = tk.Label() # popup showing the name of the feat under the mouse pointer
-        name_map = {} # correspondance canvas object id - feat name or score
         feat_thk = self.htrack - 2*self.feat_pad
         canvas = [tk.Canvas(self.root,height=self.htrack,bd=0,bg=self.canvas_bg,highlightthickness=0)
                   for _ in self.names]
@@ -328,9 +282,7 @@ class Drawer(object):
             type = self.types[n]
             c = canvas[n]
             c.config(width=self.wcanvas)
-            c.grid(row=n,column=1,pady=5)
-            c.bind("<Motion>", show_feat_name)
-            name_map[c] = {}
+            c.grid(row=n,column=1)
             if type == 'intervals':
                 c.create_line(0,self.htrack/2.,self.WIDTH,self.htrack/2.,fill=self.line_col) # track axis
                 y1,y2 = (0+self.feat_pad,feat_thk+self.feat_pad)
@@ -339,42 +291,27 @@ class Drawer(object):
                     x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
                     x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                     if f1 == self.minpos: x1-=1 # no border
-                    r = c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
-                    name_map[c][r] = g
+                    c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
             elif type == 'density':
-                hi = 2*self.htrack
-                c.config(height=hi)
-                c.create_line(0,hi-1,self.WIDTH,hi-1,fill=self.line_col) # baseline
-                if t:
-                    top_bp = self.fix[1] if self.fix else max(float(x[2]) for x in t) # highest score
-                    top = self.bp2px(top_bp,hi,top_bp)
-                    for k,feat in enumerate(t):
-                        f1,f2,g = (feat[0],feat[1],feat[2])
-                        x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
-                        x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
-                        s = float(g)-self.fix[0] if self.fix else float(g)
-                        s = self.bp2px(s,hi,top_bp)
-                        if f1 == self.minpos: x1-=1 # no border
-                        if s > 0:
-                            r = c.create_rectangle(x1,hi-1,x2,hi-s+5,fill=self.dens_col)
-                            name_map[c][r] = str(g)
-                    c.create_line(0,hi-top+5,5,hi-top+5) # vertical scale
-                    c.create_line(2,hi,2,hi-top+5) # vertical scale
-                    c.create_text(6,hi-top+5,text=str(top_bp),anchor='w')
-        back = tk.Frame(self.root,bg=self.canvas_bg,width=self.wcanvas) # blank background
-        back.grid(column=1,row=0,rowspan=len(self.names),sticky=["N","S"])
-        back.lower()
+                if t: top_bp = max(float(x[2]) for x in t) # highest score
+                c.create_line(0,self.htrack-1,self.WIDTH,self.htrack-1,fill=self.line_col) # baseline
+                for k,feat in enumerate(t):
+                    f1,f2,s = (feat[0],feat[1],feat[2])
+                    x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
+                    s = self.bp2px(float(s),self.htrack,top_bp)
+                    if f1 == self.minpos: x1-=1
+                    c.create_rectangle(x1,self.htrack-1,x2,self.htrack-s+5,fill=self.dens_col)
 
-    def draw_rmargin(self,chrom):
-        """Add a blank frame on the right as a margin, and the chromosome name."""
-        w = tk.Label(text=chrom,bg='white')
+    def draw_margin(self,chrom):
+        w = tk.Label(text=chrom,bg='red')
         w.grid(row=0,column=2)
+        # Add a blank frame on the right as a margin
         for n in range(1,len(self.names)):
             w = tk.Frame(width=self.rmargin,height=self.htrack,bg=self.bg)
             w.grid(row=n,column=2)
 
     def draw_axis(self,content):
-        """Draw the horizontal scale."""
         c = tk.Canvas(self.root,width=self.wcanvas,height=2*self.htrack,bd=0,
                       bg=self.canvas_bg,highlightthickness=0)
         c.grid(row=len(self.names)+1,column=1)
@@ -387,7 +324,6 @@ class Drawer(object):
                 x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                 c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
                 c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
-                # Need to not write overlapping pos
                 if f1!=self.minpos and f1!=self.maxpos:
                     c.create_text(x1,pad-5,text=str(f1),anchor='s')
                 if f2!=self.minpos and f2!=self.maxpos:
@@ -400,19 +336,18 @@ class Drawer(object):
 ###############################################################################
 
 class Gless(object):
-    def __init__(self,trackList,nfeat,nbp,sel,fix):
+    def __init__(self,trackList,nfeat,nbp,sel):
         self.trackList = trackList
-        self.nfeat = nfeat
-        self.nbp = nbp
-        self.sel = self.parse_selection(sel)
         self.names = [os.path.basename(t) for t in trackList]
         self.types = [self.get_type(n) for n in self.names]
+        self.nfeat = nfeat
+        self.nbp = nbp
+        self.sel = sel
         self.stream = None
         self.content = None
         self.needtodraw = True
-        fix = self.get_score_limits(fix)
         self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
-        self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp,self.reader.sel,fix)
+        self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp)
 
     def get_type(self,filename):
         """Return whether it is a track with 'intervals' or a 'density'."""
@@ -421,22 +356,6 @@ class Gless(object):
                 return 'intervals'
             elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
                 return 'density'
-
-    def parse_selection(self,sel):
-        if not sel: return None
-        elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
-            chr,coord = sel.split(':')
-            st,en = coord.split('-')
-            return {'chr':chr,'start':(int(st),int(en)),'end':(int(st),int(en))}
-        elif re.search('^chr[0-9XY]*$',sel):
-            return {'chr':sel}
-        else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
-
-    def get_score_limits(self,fix):
-        if not fix: return
-        elif len(fix.split(','))==1: return (0,float(fix))
-        elif len(fix.split(','))==2: return tuple(float(x) for x in fix.split(','))
-        else: sys.exit("Wrong format for -f option: got %s." % fix)
 
     def __call__(self):
         """Main controller function."""
@@ -451,7 +370,6 @@ class Gless(object):
                 self.drawer.ntimes = self.reader.ntimes
                 self.drawer.draw(self.content,chrom)
                 self.needtodraw = False
-                self.reader.chrom = self.reader.next_chrom
                 chrom = self.reader.chrom
             if self.drawer.keydown == chr(27): # "Esc" pressed: quit
                 sys.exit(0)
@@ -473,13 +391,14 @@ class Gless(object):
     def load_next(self):
         try:
             self.content = self.stream.next() # Load next data
+            print self.content
+            print self.reader.maxpos
             for w in self.drawer.root.children.values(): # Clear the window
                 w.destroy()
         except StopIteration:
             print "End of file"
-            if self.nfeat:
-                self.reader.ntimes -= 1
-                self.drawer.ntimes -= 1
+            self.reader.ntimes -= 1
+            self.drawer.ntimes -= 1
         self.needtodraw = True
         for w in self.drawer.root.children.values(): # Clear the window
             w.destroy()
@@ -520,27 +439,22 @@ def main():
     parser.add_argument('-s','--sel', default=None,
                        help="Region to display, formatted as in 'chr1:12-34', or \
                              a chromosome only ('chr1').")
-    parser.add_argument('-f','--fix', default=None,
-                       help="Fixed range of scores for the vertical scale. One number \
-                            (e.g. -f 10) indicates the max; two numbers separated by a comma \
-                            (e.g. -f 5,10) indicate the min and max.")
     parser.add_argument('file', nargs='+', default=None,
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
     if args.nbp: args.nfeat = None
     elif args.nfeat and args.nfeat > 10000:
         print "Up to 10000 features permitted, got -n %s." % args.nfeat; sys.exit(1)
-    Gless(args.file,args.nfeat,args.nbp,args.sel,args.fix)()
+    Gless(args.file,args.nfeat,args.nbp,args.sel)()
 
 if __name__ == '__main__':
     sys.exit(main())
 
+# python gless.py -b 20 testing_files/test1.bed testing_files/test2.bed testing_files/test1.bedgraph testing_files/test2.bedgraph testing_files/yeast_genes.bed
 
 
-#fuckinfile = "/Users/julien/Library/Saved Application State/org.python.python.savedState"
-#os.chmod(fuckinfile,0o777)
-#os.remove(fuckinfile) # bug on osx
-
+#trackList = ['testing_files/test1.bed','testing_files/test2.bed']
+#root.focus_set()
 #print c.winfo_reqheight(), c.winfo_reqwidth()
 #print c.winfo_width(), c.winfo_height()
 #bg = "#%02x%02x%02x" % (255, 255, 224) #beige background
