@@ -100,7 +100,6 @@ class Reader(object):
                         chrom,start,end = self.temp[i][:3]
                         skipped += 1
                 except StopIteration:
-                    #self.temp[i] = (self.chrom,0,0,'00')
                     self.temp.pop(i)
                     self.available_streams.remove(i)
             self.chrom = self.sel['chr']
@@ -113,7 +112,6 @@ class Reader(object):
 
     def read_nfeat(self,streams):
         self.temp = [[x,n] for n,x in enumerate(self.temp)]
-        #sortkey = lambda x:(x[0][0],x[0][2]) # sort by chr, then end
         toremove = []
         # Load *nfeat* feats of each track in the buffer
         for n in self.available_streams:
@@ -132,14 +130,11 @@ class Reader(object):
             chrtemp = sorted([x for x in self.temp if x[0][0]==self.chrom], key=lambda x:x[0][2])
             rest = [x for x in self.temp if x[0][0]!=self.chrom]
             self.temp = chrtemp+rest
-            #print "\nTEMP before:",self.temp
-            #print self.chrom, self.next_chrom
             if len(chrtemp) <= self.nfeat and rest:
                 self.chrom_change = True
                 self.next_chrom = rest[0][0][0]
             # Load *nfeat* in *toyield*
             for x,n in chrtemp[:self.nfeat]:
-                #print '\t',self.ntimes,x
                 toyield[n].append( x[1:3]+(x[3:] or ('00',)) )
                 # Reload the buffer with one element for each element read,
                 # so there are always *nfeat* x ntracks elements
@@ -148,7 +143,6 @@ class Reader(object):
                     try: self.available_streams.remove(n)
                     except ValueError: continue
             self.temp = self.temp[len(chrtemp[:self.nfeat]):]
-            #print "TEMP after:",self.temp
             if any(toyield):
                 # Add feats that go partially beyond
                 maxpos = max(x[-1][1] for x in toyield if x)
