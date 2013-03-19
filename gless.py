@@ -6,10 +6,6 @@ Description:
 This application is designed to be used as a graphical equivalent of the `less` command
 in Unix to better visualize track files.
 
-Commands:
-=========
-Use the SPACE bar to read forward, and ESC (or Delete) to return to the beginning.
-
 What it does:
 -------------
 It will give you an insight of the content of
@@ -26,6 +22,10 @@ backwards.
 Also the chromosomes names present in each file are not known in advance.
 The first file you give as input is taken as a reference. This can cause chromosomes
 to be skipped in the secondary files, if their names or order is different.
+
+Commands:
+=========
+Use the SPACE bar to read forward, and ESC (or Delete) to return to the beginning.
 
 (Near) Future functionalities:
 ==============================
