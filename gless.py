@@ -1,4 +1,48 @@
 #!/usr/bin/env python
+
+"""
+Description:
+============
+This application is designed to be used as a graphical equivalent of the `less` command
+in Unix to better visualize track files.
+
+Commands:
+=========
+Use the SPACE bar to read forward, and ESC (or Delete) to return to the beginning.
+
+What it does:
+-------------
+It will give you an insight of the content of
+your files that is probably telling more than columns of numbers.
+
+If the library `bbcflib` is found on your system, `btrack` will be used and will
+recognize .bed, .bedgraph, .wig, .sga, .bigWig, .sql, .sam formats. Else it can still
+read .bed and .bedGraph files.
+
+What it does not (for the moment):
+----------------------------------
+Since files are read sequentially (without loading temp in memory), it does not read
+backwards.
+Also the chromosomes names present in each file are not known in advance.
+The first file you give as input is taken as a reference. This can cause chromosomes
+to be skipped in the secondary files, if their names or order is different.
+
+(Near) Future functionalities:
+==============================
+* Addition of strand information.
+* Partial scroll (features 1 by 1, or fraction of the window) with arrow keys.
+* Scroll backwards (buffer with the last 10 windows displayed).
+* Dynamic dimensions for the main window (?).
+* Better display of numerous coordinates on the horizontal scale.
+* Other ideas?
+
+Known issues:
+=============
+* Bug on OSX: if it says something like "Could not restore the previous window", remove
+  /Users/<User>/Library/Saved Application State/org.python.python.savedState .
+* If -b/-n and -s are specified, the length of the selection window is used instead
+  of the -b/-n options.
+"""
 import Tkinter as tk
 import os,sys
 import argparse,re
@@ -38,7 +82,6 @@ try:
     from bbcflib.btrack import track
     assert track
 except ImportError:
-    print "Custom parser"
     track = Parser
 
 ###############################################################################
@@ -503,7 +546,7 @@ class Gless(object):
 
 ###############################################################################
 
-"""If no explicit selection, chromosomes are base on the first track."""
+"""If no explicit selection, chromosomes are based on the first track."""
 
 def main():
     parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
@@ -529,17 +572,11 @@ def main():
 if __name__ == '__main__':
     sys.exit(main())
 
+#------------------------------------------------------#
+# This code was written by Julien Delafontaine         #
+# Bioinformatics and Biostatistics Core Facility, EPFL #
+# http://bbcf.epfl.ch/                                 #
+# webmaster.bbcf@epfl.ch                               #
+#------------------------------------------------------#
 
 
-#fuckinfile = "/Users/julien/Library/Saved Application State/org.python.python.savedState"
-#os.chmod(fuckinfile,0o777)
-#os.remove(fuckinfile) # bug on osx
-
-#print c.winfo_reqheight(), c.winfo_reqwidth()
-#print c.winfo_width(), c.winfo_height()
-#bg = "#%02x%02x%02x" % (255, 255, 224) #beige background
-    #c.create_line(0,0,0,self.htrack,fill="grey") # separator label|canvas
-    #c.create_line(0,0,0,2*pad,fill=line_col)         # separator
-        #if self.geometry: # keep previous position of the window
-        #    self.geometry = '+'.join(['']+self.geometry.split('+')[1:]) # "+70+27"
-        #    self.root.geometry(self.geometry)
