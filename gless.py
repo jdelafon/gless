@@ -55,6 +55,7 @@ class Memory(object):
 class Reader(object):
     def __init__(self,trackList,nfeat,nbp,sel):
         self.tracks = [track(t) for t in trackList]
+        self.available_streams = range(len(trackList))
         self.sel = sel
         self.temp = []
         self.chrom = self.init_chr()
@@ -99,7 +100,9 @@ class Reader(object):
                         chrom,start,end = self.temp[i][:3]
                         skipped += 1
                 except StopIteration:
-                    self.temp[i] = (self.chrom,0,0,'00')
+                    #self.temp[i] = (self.chrom,0,0,'00')
+                    self.temp.pop(i)
+                    self.available_streams.remove(i)
             self.chrom = self.sel['chr']
             if self.nbp:
                 temppos = [x[1] for x in self.temp if x[3]!='00']
@@ -109,55 +112,50 @@ class Reader(object):
                 self.ntimes += skipped / self.nfeat
 
     def read_nfeat(self,streams):
-        available_streams = range(len(streams))
         self.temp = [[x,n] for n,x in enumerate(self.temp)]
-        self.chrom_change = False
-        sortkey = lambda x:(x[0][0],x[0][2]) # sort by chr, then end
+        #sortkey = lambda x:(x[0][0],x[0][2]) # sort by chr, then end
         toremove = []
         # Load *nfeat* feats of each track in the buffer
-        for n in available_streams:
-            for _ in range(self.nfeat-1):
+        for n in self.available_streams:
+            for _ in range(self.nfeat):
                 try:
                     self.temp.append([streams[n].next(),n])
                 except StopIteration:
                     toremove.append(n)
                     break
-        for n in toremove: available_streams.remove(n)
+        for n in toremove: self.available_streams.remove(n)
         # Repeat & yield each time the function is called
         while self.temp:
             self.chrom_change = False
             toyield = [[] for _ in streams]
-            len_toyield = 0
+            # Isolate one chromosome
+            chrtemp = sorted([x for x in self.temp if x[0][0]==self.chrom], key=lambda x:x[0][2])
+            rest = [x for x in self.temp if x[0][0]!=self.chrom]
+            self.temp = chrtemp+rest
+            #print "\nTEMP before:",self.temp
+            #print self.chrom, self.next_chrom
+            if len(chrtemp) <= self.nfeat and rest:
+                self.chrom_change = True
+                self.next_chrom = rest[0][0][0]
             # Load *nfeat* in *toyield*
-            while len_toyield < self.nfeat:
-                self.temp.sort(key=sortkey)
-                for x,n in self.temp[:self.nfeat]:
-                    if x[0] == self.chrom:
-                        toyield[n].append( x[1:3]+(x[3:] or ('00',)) )
-                        len_toyield += 1
-                        # Reload the buffer with one element for each element read,
-                        # so there are always *nfeat* x ntracks elements
-                        try: self.temp.append([streams[n].next(),n])
-                        except StopIteration:
-                            try: available_streams.remove(n)
-                            except ValueError: continue
-                    else: # No more feats for this chromosome
-                        self.chrom_change = True
-                        self.next_chrom = x[0]
-                        break
-                self.temp = self.temp[len_toyield:]
-                if self.chrom_change: break
-                if not self.temp: break
-                elif self.temp[0][0][0] != self.chrom:
-                    self.chrom_change = True
-                    self.next_chrom = self.temp[0][0][0]
+            for x,n in chrtemp[:self.nfeat]:
+                #print '\t',self.ntimes,x
+                toyield[n].append( x[1:3]+(x[3:] or ('00',)) )
+                # Reload the buffer with one element for each element read,
+                # so there are always *nfeat* x ntracks elements
+                try: self.temp.append([streams[n].next(),n])
+                except StopIteration:
+                    try: self.available_streams.remove(n)
+                    except ValueError: continue
+            self.temp = self.temp[len(chrtemp[:self.nfeat]):]
+            #print "TEMP after:",self.temp
             if any(toyield):
                 # Add feats that go partially beyond
                 maxpos = max(x[-1][1] for x in toyield if x)
-                unseen = list(available_streams) # copy
-                for k,feat in enumerate(self.temp):
+                unseen = list(self.available_streams) # copy
+                chrtemp = chrtemp[self.nfeat:]
+                for k,feat in enumerate(chrtemp):
                     x,n = feat
-                    if x[0] != self.chrom: break
                     if n in unseen and x[1] < maxpos:
                         toyield[n].append( (x[1],min(x[2],maxpos))+(x[3:] or ('00',)) )
                         self.temp[k][0] = (x[0],maxpos,x[2])+x[3:]
@@ -168,16 +166,15 @@ class Reader(object):
             else: break
 
     def read_nbp(self,streams):
-        available_streams = range(len(streams))
         # Repeat & yield each time the function is called
-        while available_streams:
+        while self.available_streams:
             maxpos = self.ntimes*self.nbp
             toyield = [[] for _ in streams]
             toremove = []
             self.chrom_change = False
             chrom = [self.chrom for _ in streams]
             # Load items within *nbp* in *toyield*
-            for n in available_streams:
+            for n in self.available_streams:
                 x = self.temp[n]
                 while x[0] == self.chrom and x[2] <= maxpos:
                     toyield[n].append((x[1],x[2],x[3]))
@@ -192,8 +189,8 @@ class Reader(object):
                     toyield[n].append((x[1],maxpos,x[3]))
                     x = (x[0],maxpos,x[2],x[3])
                 self.temp[n] = x
-            for n in toremove: available_streams.remove(n)
-            if all(chrom[n] != self.chrom for n in available_streams):
+            for n in toremove: self.available_streams.remove(n)
+            if all(chrom[n] != self.chrom for n in self.available_streams):
                 self.next_chrom = chrom[0]
                 self.chrom_change = True
             if any(toyield):
@@ -449,7 +446,8 @@ class Gless(object):
                 self.drawer.ntimes = self.reader.ntimes
                 self.drawer.draw(self.content,chrom)
                 self.needtodraw = False
-                self.reader.chrom = self.reader.next_chrom
+                if self.reader.chrom_change:
+                    self.reader.chrom = self.reader.next_chrom
                 chrom = self.reader.chrom
             if self.drawer.keydown == chr(27): # "Esc" pressed: quit
                 sys.exit(0)
