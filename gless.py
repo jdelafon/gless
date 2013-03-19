@@ -277,6 +277,10 @@ class Drawer(object):
         self.draw_rmargin(chrom)
         self.draw_axis(content)
         #self.root.wm_attributes("-topmost", 1) # makes the window stay on top
+        def _finish():
+            self.root.destroy()
+            sys.exit(0)
+        self.root.protocol("WM_DELETE_WINDOW", _finish)
         self.root.mainloop()
 
     def bp2px(self,x,wwidth,reg_bp):
