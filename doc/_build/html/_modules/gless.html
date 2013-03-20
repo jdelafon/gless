@@ -1,0 +1,681 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>gless &mdash; gless 1.0.0 documentation</title>
+    
+    <link rel="stylesheet" href="../_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '../',
+        VERSION:     '1.0.0',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="../_static/jquery.js"></script>
+    <script type="text/javascript" src="../_static/underscore.js"></script>
+    <script type="text/javascript" src="../_static/doctools.js"></script>
+    <link rel="top" title="gless 1.0.0 documentation" href="../index.html" />
+    <link rel="up" title="Module code" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">gless 1.0.0 documentation</a> &raquo;</li>
+          <li><a href="index.html" accesskey="U">Module code</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <h1>Source code for gless</h1><div class="highlight"><pre>
+<span class="c">#!/usr/bin/env python</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Description:</span>
+<span class="sd">============</span>
+<span class="sd">This application is designed to be used as a graphical equivalent of the `less` command</span>
+<span class="sd">in Unix to better visualize track files.</span>
+
+<span class="sd">What it does:</span>
+<span class="sd">-------------</span>
+<span class="sd">It will give you an insight of the content of</span>
+<span class="sd">your files that is probably telling more than columns of numbers.</span>
+
+<span class="sd">If the library `bbcflib` is found on your system, `btrack` will be used and will</span>
+<span class="sd">recognize .bed, .bedgraph, .wig, .sga, .bigWig, .sql, .sam formats. Else it can still</span>
+<span class="sd">read .bed and .bedGraph files.</span>
+
+<span class="sd">What it does not (for the moment):</span>
+<span class="sd">----------------------------------</span>
+<span class="sd">Since files are read sequentially (without loading temp in memory), it does not read</span>
+<span class="sd">backwards.</span>
+<span class="sd">Also the chromosomes names present in each file are not known in advance.</span>
+<span class="sd">The first file you give as input is taken as a reference. This can cause chromosomes</span>
+<span class="sd">to be skipped in the secondary files, if their names or order is different.</span>
+
+<span class="sd">Usage and options:</span>
+<span class="sd">==================</span>
+<span class="sd">Use the SPACE bar to read forward, Return (or Delete) to return to the beginning,</span>
+<span class="sd">ESC to quit.</span>
+
+<span class="sd">Options:</span>
+<span class="sd">--------</span>
+<span class="sd">-n nfeat: display the next *nfeat* features (from all tracks together).</span>
+<span class="sd">-b nbp  : display the next *nbp* base pairs window.</span>
+<span class="sd">-f fix  : set the vertical scale for numeric tracks: either `&lt;min&gt;,&lt;max&gt;` or just `&lt;max&gt;`.</span>
+<span class="sd">-s sel  : selection: either a chromosome name, or a region like `chr1:10-50`.</span>
+
+<span class="sd">(Near) Future functionalities:</span>
+<span class="sd">==============================</span>
+<span class="sd">* Addition of strand information.</span>
+<span class="sd">* Partial scroll (features 1 by 1, or fraction of the window) with arrow keys.</span>
+<span class="sd">* Scroll backwards (buffer with the last 10 windows displayed).</span>
+<span class="sd">* Dynamic dimensions for the main window (?).</span>
+<span class="sd">* Better display of numerous coordinates on the horizontal scale.</span>
+<span class="sd">* Other ideas?</span>
+
+<span class="sd">Known issues:</span>
+<span class="sd">=============</span>
+<span class="sd">* Bug on OSX: if it says something like &quot;Could not restore the previous window&quot;, remove</span>
+<span class="sd">  /Users/&lt;User&gt;/Library/Saved Application State/org.python.python.savedState .</span>
+<span class="sd">* If -b/-n and -s are specified, the length of the selection window is used instead</span>
+<span class="sd">  of the -b/-n options.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">Tkinter</span> <span class="kn">as</span> <span class="nn">tk</span>
+<span class="kn">import</span> <span class="nn">os</span><span class="o">,</span><span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">argparse</span><span class="o">,</span><span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">csv</span>
+
+<span class="c">###############################################################################</span>
+
+<div class="viewcode-block" id="Parser"><a class="viewcode-back" href="../reference.html#gless.Parser">[docs]</a><span class="k">class</span> <span class="nc">Parser</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;A replacement for btrack when bbcflib is not found, able to parse</span>
+<span class="sd">       bed and bedGraph formats only.&quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">filename</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">path</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">abspath</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">format</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">splitext</span><span class="p">(</span><span class="n">filename</span><span class="p">)[</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">:]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fields</span> <span class="o">=</span> <span class="p">[</span><span class="s">&#39;chr&#39;</span><span class="p">,</span><span class="s">&#39;start&#39;</span><span class="p">,</span><span class="s">&#39;end&#39;</span><span class="p">,</span><span class="s">&#39;other&#39;</span><span class="p">]</span>
+    <span class="k">def</span> <span class="nf">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">return</span> <span class="bp">self</span>
+    <span class="k">def</span> <span class="nf">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">errtype</span><span class="p">,</span><span class="n">value</span><span class="p">,</span><span class="n">traceback</span><span class="p">):</span>
+        <span class="k">pass</span>
+    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">fields</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span><span class="n">selection</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">reader</span> <span class="o">=</span> <span class="n">csv</span><span class="o">.</span><span class="n">reader</span><span class="p">(</span><span class="n">f</span><span class="p">,</span><span class="n">delimiter</span><span class="o">=</span><span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span><span class="p">,</span><span class="n">quotechar</span><span class="o">=</span><span class="s">&#39;|&#39;</span><span class="p">)</span>
+            <span class="n">line0</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+            <span class="n">nfields</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">line0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">line0</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&quot;track&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="n">line0</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s">&quot;#&quot;</span><span class="p">):</span> <span class="n">f</span><span class="o">.</span><span class="n">seek</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="n">fun</span> <span class="o">=</span> <span class="nb">float</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">format</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">==</span><span class="s">&#39;bedgraph&#39;</span> <span class="k">else</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span><span class="n">x</span>
+            <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">reader</span><span class="p">:</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="nb">chr</span><span class="p">,</span><span class="n">start</span><span class="p">,</span><span class="n">end</span> <span class="o">=</span> <span class="p">(</span><span class="n">line</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="nb">int</span><span class="p">(</span><span class="n">line</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span><span class="nb">int</span><span class="p">(</span><span class="n">line</span><span class="p">[</span><span class="mi">2</span><span class="p">]))</span>
+                    <span class="n">other</span> <span class="o">=</span> <span class="n">fun</span><span class="p">(</span><span class="n">line</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span> <span class="k">if</span> <span class="n">nfields</span> <span class="o">&gt;</span> <span class="mi">3</span> <span class="k">else</span> <span class="s">&quot;00&quot;</span>
+                <span class="k">except</span> <span class="p">(</span><span class="ne">IndexError</span><span class="p">,</span><span class="ne">ValueError</span><span class="p">):</span>
+                    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">((</span><span class="s">&quot;Library &#39;bbcflib&#39; not found. &quot;</span>
+                              <span class="s">&quot;Only &#39;bed&#39; and &#39;bedGraph&#39; formats available. &quot;</span>
+                              <span class="s">&quot;Wrong line in file </span><span class="si">%s</span><span class="s">:</span><span class="se">\n</span><span class="si">%s</span><span class="s">&quot;</span>
+                              <span class="o">%</span> <span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">path</span><span class="p">),</span><span class="s">&#39;</span><span class="se">\t</span><span class="s">&#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">line</span><span class="p">))</span> <span class="p">))</span>
+                <span class="k">yield</span> <span class="p">(</span><span class="nb">chr</span><span class="p">,</span><span class="n">start</span><span class="p">,</span><span class="n">end</span><span class="p">,</span><span class="n">other</span><span class="p">)</span></div>
+<span class="k">try</span><span class="p">:</span>
+    <span class="kn">from</span> <span class="nn">bbcflib.btrack</span> <span class="kn">import</span> <span class="n">track</span>
+    <span class="k">assert</span> <span class="n">track</span>
+<span class="k">except</span> <span class="ne">ImportError</span><span class="p">:</span>
+    <span class="n">track</span> <span class="o">=</span> <span class="n">Parser</span>
+
+<span class="c">###############################################################################</span>
+
+<div class="viewcode-block" id="Memory"><a class="viewcode-back" href="../reference.html#gless.Memory">[docs]</a><span class="k">class</span> <span class="nc">Memory</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Remembers what has already been read, so that one can go back.&quot;&quot;&quot;</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">content</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">content</span><span class="p">):</span>
+        <span class="k">pass</span>
+
+<span class="c">###############################################################################</span>
+</div>
+<span class="k">class</span> <span class="nc">Reader</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">trackList</span><span class="p">,</span><span class="n">nfeat</span><span class="p">,</span><span class="n">nbp</span><span class="p">,</span><span class="n">sel</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">tracks</span> <span class="o">=</span> <span class="p">[</span><span class="n">track</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">trackList</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span> <span class="o">=</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">trackList</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="o">=</span> <span class="n">sel</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">temp</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">chrom</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">init_chr</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">chrom_change</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">next_chrom</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">chrom</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">=</span> <span class="mi">1</span>
+        <span class="k">if</span> <span class="n">nbp</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nbp</span> <span class="o">=</span> <span class="n">nbp</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="k">elif</span> <span class="n">nfeat</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span> <span class="o">=</span> <span class="n">nfeat</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">nbp</span> <span class="o">=</span> <span class="bp">None</span>
+
+    <span class="k">def</span> <span class="nf">init_chr</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tracks</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span> <span class="k">return</span> <span class="n">t</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">next</span><span class="p">()[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span> <span class="k">continue</span>
+
+    <span class="k">def</span> <span class="nf">read</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6,n)]] with either the *nfeat*</span>
+<span class="sd">           next items, or all next items within an *nbp* window. `n` is a name or a score.&quot;&quot;&quot;</span>
+        <span class="n">streams</span> <span class="o">=</span> <span class="p">[</span><span class="n">t</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="n">fields</span><span class="o">=</span><span class="n">t</span><span class="o">.</span><span class="n">fields</span><span class="p">[:</span><span class="mi">4</span><span class="p">])</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">tracks</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">go_to_selection</span><span class="p">(</span><span class="n">streams</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_nfeat</span><span class="p">(</span><span class="n">streams</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">nbp</span><span class="p">:</span>
+            <span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">read_nbp</span><span class="p">(</span><span class="n">streams</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">content</span>
+
+    <span class="k">def</span> <span class="nf">go_to_selection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">streams</span><span class="p">):</span>
+        <span class="n">nosel</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">sys</span><span class="o">.</span><span class="n">maxint</span><span class="p">)</span>
+        <span class="n">skipped</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">temp</span> <span class="o">=</span> <span class="p">[</span><span class="n">s</span><span class="o">.</span><span class="n">next</span><span class="p">()</span> <span class="k">for</span> <span class="n">s</span> <span class="ow">in</span> <span class="n">streams</span><span class="p">]</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">i</span><span class="p">,</span><span class="n">stream</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">streams</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="n">chrom</span><span class="p">,</span><span class="n">start</span><span class="p">,</span><span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">[</span><span class="n">i</span><span class="p">][:</span><span class="mi">3</span><span class="p">]</span>
+                    <span class="k">while</span> <span class="n">chrom</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;chr&#39;</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">chrom</span><span class="p">)</span> \
+                    <span class="ow">or</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">,</span><span class="n">nosel</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">start</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">,</span><span class="n">nosel</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span> \
+                    <span class="ow">or</span> <span class="ow">not</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;end&#39;</span><span class="p">,</span><span class="n">nosel</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">end</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;end&#39;</span><span class="p">,</span><span class="n">nosel</span><span class="p">)[</span><span class="mi">1</span><span class="p">]):</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">=</span> <span class="n">stream</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+                        <span class="n">chrom</span><span class="p">,</span><span class="n">start</span><span class="p">,</span><span class="n">end</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">[</span><span class="n">i</span><span class="p">][:</span><span class="mi">3</span><span class="p">]</span>
+                        <span class="n">skipped</span> <span class="o">+=</span> <span class="mi">1</span>
+                <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="o">.</span><span class="n">pop</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">chrom</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="p">[</span><span class="s">&#39;chr&#39;</span><span class="p">]</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">nbp</span><span class="p">:</span>
+                <span class="n">temppos</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp</span> <span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="o">!=</span><span class="s">&#39;00&#39;</span><span class="p">]</span>
+                <span class="k">if</span> <span class="n">temppos</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">+=</span> <span class="nb">min</span><span class="p">(</span><span class="n">temppos</span><span class="p">)</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">nbp</span>
+                <span class="k">else</span><span class="p">:</span> <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="s">&quot;Chromosome </span><span class="si">%s</span><span class="s"> not found.&quot;</span> <span class="o">%</span> <span class="bp">self</span><span class="o">.</span><span class="n">chrom</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">+=</span> <span class="n">skipped</span> <span class="o">/</span> <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span>
+
+    <span class="k">def</span> <span class="nf">read_nfeat</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">streams</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">temp</span> <span class="o">=</span> <span class="p">[[</span><span class="n">x</span><span class="p">,</span><span class="n">n</span><span class="p">]</span> <span class="k">for</span> <span class="n">n</span><span class="p">,</span><span class="n">x</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">)]</span>
+        <span class="n">toremove</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="c"># Load *nfeat* feats of each track in the buffer</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span><span class="p">:</span>
+            <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">):</span>
+                <span class="k">try</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">streams</span><span class="p">[</span><span class="n">n</span><span class="p">]</span><span class="o">.</span><span class="n">next</span><span class="p">(),</span><span class="n">n</span><span class="p">])</span>
+                <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+                    <span class="n">toremove</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+                    <span class="k">break</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">toremove</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+        <span class="c"># Repeat &amp; yield each time the function is called</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">chrom_change</span> <span class="o">=</span> <span class="bp">False</span>
+            <span class="n">toyield</span> <span class="o">=</span> <span class="p">[[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">streams</span><span class="p">]</span>
+            <span class="c"># Isolate one chromosome</span>
+            <span class="n">chrtemp</span> <span class="o">=</span> <span class="nb">sorted</span><span class="p">([</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp</span> <span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">==</span><span class="bp">self</span><span class="o">.</span><span class="n">chrom</span><span class="p">],</span> <span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">2</span><span class="p">])</span>
+            <span class="n">rest</span> <span class="o">=</span> <span class="p">[</span><span class="n">x</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp</span> <span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span><span class="o">!=</span><span class="bp">self</span><span class="o">.</span><span class="n">chrom</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">temp</span> <span class="o">=</span> <span class="n">chrtemp</span><span class="o">+</span><span class="n">rest</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">chrtemp</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span> <span class="ow">and</span> <span class="n">rest</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">chrom_change</span> <span class="o">=</span> <span class="bp">True</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">next_chrom</span> <span class="o">=</span> <span class="n">rest</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+            <span class="c"># Load *nfeat* in *toyield*</span>
+            <span class="k">for</span> <span class="n">x</span><span class="p">,</span><span class="n">n</span> <span class="ow">in</span> <span class="n">chrtemp</span><span class="p">[:</span><span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">]:</span>
+                <span class="n">toyield</span><span class="p">[</span><span class="n">n</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="mi">3</span><span class="p">]</span><span class="o">+</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">3</span><span class="p">:]</span> <span class="ow">or</span> <span class="p">(</span><span class="s">&#39;00&#39;</span><span class="p">,))</span> <span class="p">)</span>
+                <span class="c"># Reload the buffer with one element for each element read,</span>
+                <span class="c"># so there are always *nfeat* x ntracks elements</span>
+                <span class="k">try</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="o">.</span><span class="n">append</span><span class="p">([</span><span class="n">streams</span><span class="p">[</span><span class="n">n</span><span class="p">]</span><span class="o">.</span><span class="n">next</span><span class="p">(),</span><span class="n">n</span><span class="p">])</span>
+                <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+                    <span class="k">try</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+                    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span> <span class="k">continue</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">temp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="n">chrtemp</span><span class="p">[:</span><span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">]):]</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">toyield</span><span class="p">):</span>
+                <span class="c"># Add feats that go partially beyond</span>
+                <span class="n">maxpos</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">toyield</span> <span class="k">if</span> <span class="n">x</span><span class="p">)</span>
+                <span class="n">unseen</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span><span class="p">)</span> <span class="c"># copy</span>
+                <span class="n">chrtemp</span> <span class="o">=</span> <span class="n">chrtemp</span><span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">:]</span>
+                <span class="k">for</span> <span class="n">k</span><span class="p">,</span><span class="n">feat</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">chrtemp</span><span class="p">):</span>
+                    <span class="n">x</span><span class="p">,</span><span class="n">n</span> <span class="o">=</span> <span class="n">feat</span>
+                    <span class="k">if</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">unseen</span> <span class="ow">and</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">maxpos</span><span class="p">:</span>
+                        <span class="n">toyield</span><span class="p">[</span><span class="n">n</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">(</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="nb">min</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="n">maxpos</span><span class="p">))</span><span class="o">+</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">3</span><span class="p">:]</span> <span class="ow">or</span> <span class="p">(</span><span class="s">&#39;00&#39;</span><span class="p">,))</span> <span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">[</span><span class="n">k</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">maxpos</span><span class="p">,</span><span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span><span class="o">+</span><span class="n">x</span><span class="p">[</span><span class="mi">3</span><span class="p">:]</span>
+                        <span class="n">unseen</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="ow">not</span> <span class="n">unseen</span><span class="p">:</span> <span class="k">break</span>
+                <span class="c">#print &quot;Toyield&quot;, toyield</span>
+                <span class="k">yield</span> <span class="n">toyield</span>
+            <span class="k">else</span><span class="p">:</span> <span class="k">break</span>
+
+    <span class="k">def</span> <span class="nf">read_nbp</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">streams</span><span class="p">):</span>
+        <span class="c"># Repeat &amp; yield each time the function is called</span>
+        <span class="k">while</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span><span class="p">:</span>
+            <span class="n">maxpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ntimes</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">nbp</span>
+            <span class="n">toyield</span> <span class="o">=</span> <span class="p">[[]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">streams</span><span class="p">]</span>
+            <span class="n">toremove</span> <span class="o">=</span> <span class="p">[]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">chrom_change</span> <span class="o">=</span> <span class="bp">False</span>
+            <span class="n">chrom</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">chrom</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">streams</span><span class="p">]</span>
+            <span class="c"># Load items within *nbp* in *toyield*</span>
+            <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span><span class="p">:</span>
+                <span class="n">x</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">[</span><span class="n">n</span><span class="p">]</span>
+                <span class="k">while</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">chrom</span> <span class="ow">and</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&lt;=</span> <span class="n">maxpos</span><span class="p">:</span>
+                    <span class="n">toyield</span><span class="p">[</span><span class="n">n</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="n">x</span><span class="p">[</span><span class="mi">3</span><span class="p">]))</span>
+                    <span class="k">try</span><span class="p">:</span> <span class="n">x</span> <span class="o">=</span> <span class="n">streams</span><span class="p">[</span><span class="n">n</span><span class="p">]</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+                    <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+                        <span class="n">toremove</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+                        <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">=</span> <span class="bp">None</span>
+                        <span class="k">break</span>
+                <span class="k">if</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">chrom</span><span class="p">:</span>
+                    <span class="n">chrom</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="k">elif</span> <span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">maxpos</span> <span class="ow">and</span> <span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">maxpos</span><span class="p">:</span>
+                    <span class="n">toyield</span><span class="p">[</span><span class="n">n</span><span class="p">]</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">x</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="n">maxpos</span><span class="p">,</span><span class="n">x</span><span class="p">[</span><span class="mi">3</span><span class="p">]))</span>
+                    <span class="n">x</span> <span class="o">=</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">maxpos</span><span class="p">,</span><span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="n">x</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">temp</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">=</span> <span class="n">x</span>
+            <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="n">toremove</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">all</span><span class="p">(</span><span class="n">chrom</span><span class="p">[</span><span class="n">n</span><span class="p">]</span> <span class="o">!=</span> <span class="bp">self</span><span class="o">.</span><span class="n">chrom</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">available_streams</span><span class="p">):</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">next_chrom</span> <span class="o">=</span> <span class="n">chrom</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">chrom_change</span> <span class="o">=</span> <span class="bp">True</span>
+            <span class="k">if</span> <span class="nb">any</span><span class="p">(</span><span class="n">toyield</span><span class="p">):</span>
+                <span class="c">#print &quot;Toyield&quot;, toyield</span>
+                <span class="k">yield</span> <span class="n">toyield</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">yield</span> <span class="p">[[(</span><span class="mi">0</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="s">&#39;00&#39;</span><span class="p">)]</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="n">streams</span><span class="p">]</span>
+
+<span class="c">###############################################################################</span>
+
+<span class="k">class</span> <span class="nc">Drawer</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">names</span><span class="p">,</span><span class="n">types</span><span class="p">,</span><span class="n">nfeat</span><span class="p">,</span><span class="n">nbp</span><span class="p">,</span><span class="n">sel</span><span class="p">,</span><span class="n">fix</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">names</span> <span class="o">=</span> <span class="n">names</span> <span class="c"># [file names]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">types</span> <span class="o">=</span> <span class="n">types</span> <span class="c"># [&#39;intervals&#39; or &#39;density&#39;]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span> <span class="o">=</span> <span class="n">nfeat</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nbp</span> <span class="o">=</span> <span class="n">nbp</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="o">=</span> <span class="n">sel</span>     <span class="c"># selection, of the type {&#39;chr&#39;:&#39;chr1&#39;,&#39;start&#39;:(1,1),&#39;end&#39;:(2,2)}</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fix</span> <span class="o">=</span> <span class="n">fix</span>     <span class="c"># (limits,) for the range of the vertical scale</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">=</span> <span class="mi">0</span>    <span class="c"># number of times the draw function is called</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">=</span> <span class="mi">0</span>    <span class="c"># rightmost coordinate to display</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span> <span class="o">=</span> <span class="mi">0</span>    <span class="c"># leftmost coordinate to display</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">keydown</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+        <span class="c"># Geometry</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root</span> <span class="o">=</span> <span class="n">tk</span><span class="o">.</span><span class="n">Tk</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">WIDTH</span> <span class="o">=</span> <span class="mi">800</span>   <span class="c"># window width</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">htrack</span> <span class="o">=</span> <span class="mi">30</span>   <span class="c"># canvas height</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">rmargin</span> <span class="o">=</span> <span class="mi">100</span> <span class="c"># width of the right margin</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">feat_pad</span> <span class="o">=</span> <span class="mi">10</span> <span class="c"># space between feat rectangles and the border of the canvas</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wlabel</span> <span class="o">=</span> <span class="mi">0</span>    <span class="c"># width of the left margin with the track names</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span> <span class="o">=</span> <span class="mi">0</span>   <span class="c"># width of the canvas</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span> <span class="o">=</span> <span class="mi">0</span>    <span class="c"># size of the genomic region to display, in bp</span>
+        <span class="c"># Colors</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">bg</span> <span class="o">=</span> <span class="s">&quot;grey&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">canvas_bg</span> <span class="o">=</span> <span class="s">&quot;white&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">feat_col</span> <span class="o">=</span> <span class="s">&quot;blue&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">dens_col</span> <span class="o">=</span> <span class="s">&quot;green&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">line_col</span> <span class="o">=</span> <span class="s">&quot;black&quot;</span>
+
+    <span class="k">def</span> <span class="nf">draw</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">content</span><span class="p">,</span><span class="n">chrom</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Create a new window and draw from the *content* coordinates</span>
+<span class="sd">           (of the form [[(1,2,n),(3,4,n)], [(3,5,n),(4,6,n)],...],</span>
+<span class="sd">           where `n` is either a name or a score).&quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">keyboard</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+            <span class="k">if</span> <span class="n">event</span><span class="o">.</span><span class="n">keysym</span> <span class="o">==</span> <span class="s">&#39;Escape&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">keydown</span> <span class="o">=</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">27</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">destroy</span><span class="p">()</span>
+                <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">keysym</span> <span class="o">==</span> <span class="s">&#39;space&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">keydown</span> <span class="o">=</span> <span class="s">&#39; &#39;</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">quit</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">keysym</span> <span class="o">==</span> <span class="s">&#39;Left&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">keydown</span> <span class="o">=</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">37</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">quit</span><span class="p">()</span>
+                <span class="k">pass</span> <span class="c"># backwards??</span>
+            <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">keysym</span> <span class="o">==</span> <span class="s">&#39;Right&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">keydown</span> <span class="o">=</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">39</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">quit</span><span class="p">()</span>
+                <span class="k">pass</span> <span class="c"># slowly forward</span>
+            <span class="k">elif</span> <span class="n">event</span><span class="o">.</span><span class="n">keysym</span> <span class="o">==</span> <span class="s">&#39;BackSpace&#39;</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">keydown</span> <span class="o">=</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">127</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">quit</span><span class="p">()</span>
+                <span class="k">pass</span> <span class="c"># Return to the beginning</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">title</span><span class="p">(</span><span class="s">&quot;gless&quot;</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">bind</span><span class="p">(</span><span class="s">&quot;&lt;Key&gt;&quot;</span><span class="p">,</span> <span class="n">keyboard</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">config</span><span class="p">(</span><span class="n">bg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bg</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">focus_set</span><span class="p">()</span> <span class="c"># not working?</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">nbp</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="p">[</span><span class="s">&#39;start&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="p">[</span><span class="s">&#39;end&#39;</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span> <span class="o">=</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">ntimes</span><span class="o">-</span><span class="mi">1</span><span class="p">)</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">nbp</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">ntimes</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">nbp</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span>
+        <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">content</span> <span class="k">if</span> <span class="n">t</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s">&#39;start&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="p">[</span><span class="s">&#39;start&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="p">[</span><span class="s">&#39;end&#39;</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nb">min</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">][</span><span class="mi">0</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">content</span> <span class="k">if</span> <span class="n">t</span><span class="p">))</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">][</span><span class="mi">1</span><span class="p">]</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">content</span> <span class="k">if</span> <span class="n">t</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">nbp</span><span class="p">))</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">draw_labels</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">draw_tracks</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">draw_rmargin</span><span class="p">(</span><span class="n">chrom</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">draw_axis</span><span class="p">(</span><span class="n">content</span><span class="p">)</span>
+        <span class="c">#self.root.wm_attributes(&quot;-topmost&quot;, 1) # makes the window stay on top</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">mainloop</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">bp2px</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">x</span><span class="p">,</span><span class="n">wwidth</span><span class="p">,</span><span class="n">reg_bp</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Transform base pair coordinates to distances in pixels.&quot;&quot;&quot;</span>
+        <span class="k">try</span><span class="p">:</span> <span class="k">return</span> <span class="n">x</span> <span class="o">*</span> <span class="n">wwidth</span><span class="o">/</span><span class="n">reg_bp</span>
+        <span class="k">except</span> <span class="ne">ZeroDivisionError</span><span class="p">:</span> <span class="k">return</span> <span class="mi">0</span>
+
+    <span class="k">def</span> <span class="nf">draw_labels</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Write track names on the left.&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">n</span><span class="p">,</span><span class="n">name</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">):</span>
+            <span class="n">l</span> <span class="o">=</span> <span class="n">tk</span><span class="o">.</span><span class="n">Label</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="p">,</span><span class="n">text</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">[</span><span class="n">n</span><span class="p">],</span><span class="n">bd</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">highlightthickness</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">bg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bg</span><span class="p">,</span><span class="n">padx</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">wlabel</span> <span class="o">=</span> <span class="nb">max</span><span class="p">(</span><span class="n">l</span><span class="o">.</span><span class="n">winfo_reqwidth</span><span class="p">(),</span><span class="bp">self</span><span class="o">.</span><span class="n">wlabel</span><span class="p">)</span>
+            <span class="n">l</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">row</span><span class="o">=</span><span class="n">n</span><span class="p">,</span><span class="n">column</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">WIDTH</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">wlabel</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">rmargin</span>
+
+    <span class="k">def</span> <span class="nf">draw_tracks</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">content</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Draw the canvas with the tracks in the middle.&quot;&quot;&quot;</span>
+        <span class="k">def</span> <span class="nf">show_feat_name</span><span class="p">(</span><span class="n">event</span><span class="p">):</span>
+            <span class="n">canvas</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">widget</span>
+            <span class="n">x</span><span class="p">,</span><span class="n">y</span> <span class="o">=</span> <span class="n">event</span><span class="o">.</span><span class="n">x</span><span class="p">,</span> <span class="n">event</span><span class="o">.</span><span class="n">y</span>
+            <span class="n">closest</span> <span class="o">=</span> <span class="n">canvas</span><span class="o">.</span><span class="n">find_closest</span><span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="n">y</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">canvas</span><span class="o">.</span><span class="n">type</span><span class="p">(</span><span class="n">closest</span><span class="p">)</span><span class="o">==</span><span class="s">&#39;rectangle&#39;</span><span class="p">:</span>
+                <span class="n">x1</span><span class="p">,</span><span class="n">y1</span><span class="p">,</span><span class="n">x2</span><span class="p">,</span><span class="n">y2</span> <span class="o">=</span> <span class="n">canvas</span><span class="o">.</span><span class="n">coords</span><span class="p">(</span><span class="n">closest</span><span class="p">)</span>
+                <span class="c"># the base line has x=0 and is often closer</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">thisfeat</span><span class="o">.</span><span class="n">place</span><span class="p">(</span><span class="n">x</span><span class="o">=</span><span class="n">x1</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">wlabel</span><span class="o">+</span><span class="p">(</span><span class="n">x2</span><span class="o">-</span><span class="n">x1</span><span class="p">)</span><span class="o">/</span><span class="mf">2.</span><span class="p">,</span>
+                                    <span class="n">y</span><span class="o">=</span><span class="n">y1</span><span class="o">+</span><span class="n">canvas</span><span class="o">.</span><span class="n">winfo_y</span><span class="p">()</span><span class="o">+</span><span class="p">(</span><span class="n">y2</span><span class="o">-</span><span class="n">y1</span><span class="p">)</span><span class="o">/</span><span class="mf">2.</span><span class="p">,</span> <span class="n">anchor</span><span class="o">=</span><span class="s">&#39;center&#39;</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">thisfeat</span><span class="o">.</span><span class="n">config</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="n">name_map</span><span class="p">[</span><span class="n">canvas</span><span class="p">][</span><span class="n">closest</span><span class="p">[</span><span class="mi">0</span><span class="p">]],</span>
+                     <span class="n">bd</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="n">highlightbackground</span><span class="o">=</span><span class="s">&quot;black&quot;</span><span class="p">,</span><span class="n">highlightthickness</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">thisfeat</span><span class="o">.</span><span class="n">lift</span><span class="p">()</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">thisfeat</span><span class="o">.</span><span class="n">place_forget</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">thisfeat</span> <span class="o">=</span> <span class="n">tk</span><span class="o">.</span><span class="n">Label</span><span class="p">()</span> <span class="c"># popup showing the name of the feat under the mouse pointer</span>
+        <span class="n">name_map</span> <span class="o">=</span> <span class="p">{}</span> <span class="c"># correspondance canvas object id - feat name or score</span>
+        <span class="n">feat_thk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">htrack</span> <span class="o">-</span> <span class="mi">2</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">feat_pad</span>
+        <span class="n">canvas</span> <span class="o">=</span> <span class="p">[</span><span class="n">tk</span><span class="o">.</span><span class="n">Canvas</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="p">,</span><span class="n">height</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">htrack</span><span class="p">,</span><span class="n">bd</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">bg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">canvas_bg</span><span class="p">,</span><span class="n">highlightthickness</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+                  <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">]</span>
+        <span class="k">for</span> <span class="n">n</span><span class="p">,</span><span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">content</span><span class="p">):</span>
+            <span class="nb">type</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">types</span><span class="p">[</span><span class="n">n</span><span class="p">]</span>
+            <span class="n">c</span> <span class="o">=</span> <span class="n">canvas</span><span class="p">[</span><span class="n">n</span><span class="p">]</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">config</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span><span class="p">)</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">row</span><span class="o">=</span><span class="n">n</span><span class="p">,</span><span class="n">column</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="n">pady</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+            <span class="n">c</span><span class="o">.</span><span class="n">bind</span><span class="p">(</span><span class="s">&quot;&lt;Motion&gt;&quot;</span><span class="p">,</span> <span class="n">show_feat_name</span><span class="p">)</span>
+            <span class="n">name_map</span><span class="p">[</span><span class="n">c</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+            <span class="k">if</span> <span class="nb">type</span> <span class="o">==</span> <span class="s">&#39;intervals&#39;</span><span class="p">:</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">create_line</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">htrack</span><span class="o">/</span><span class="mf">2.</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">WIDTH</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">htrack</span><span class="o">/</span><span class="mf">2.</span><span class="p">,</span><span class="n">fill</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">line_col</span><span class="p">)</span> <span class="c"># track axis</span>
+                <span class="n">y1</span><span class="p">,</span><span class="n">y2</span> <span class="o">=</span> <span class="p">(</span><span class="mi">0</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">feat_pad</span><span class="p">,</span><span class="n">feat_thk</span><span class="o">+</span><span class="bp">self</span><span class="o">.</span><span class="n">feat_pad</span><span class="p">)</span>
+                <span class="k">for</span> <span class="n">k</span><span class="p">,</span><span class="n">feat</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">t</span><span class="p">):</span>
+                    <span class="n">f1</span><span class="p">,</span><span class="n">f2</span><span class="p">,</span><span class="n">g</span> <span class="o">=</span> <span class="p">(</span><span class="n">feat</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">feat</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="n">feat</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+                    <span class="n">x1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bp2px</span><span class="p">(</span><span class="n">f1</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">minpos</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span><span class="p">)</span>
+                    <span class="n">x2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bp2px</span><span class="p">(</span><span class="n">f2</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">minpos</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span><span class="p">)</span>
+                    <span class="k">if</span> <span class="n">f1</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span><span class="p">:</span> <span class="n">x1</span><span class="o">-=</span><span class="mi">1</span> <span class="c"># no border</span>
+                    <span class="n">r</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">create_rectangle</span><span class="p">(</span><span class="n">x1</span><span class="p">,</span><span class="n">y1</span><span class="p">,</span><span class="n">x2</span><span class="p">,</span><span class="n">y2</span><span class="p">,</span><span class="n">fill</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">feat_col</span><span class="p">)</span>
+                    <span class="n">name_map</span><span class="p">[</span><span class="n">c</span><span class="p">][</span><span class="n">r</span><span class="p">]</span> <span class="o">=</span> <span class="n">g</span>
+            <span class="k">elif</span> <span class="nb">type</span> <span class="o">==</span> <span class="s">&#39;density&#39;</span><span class="p">:</span>
+                <span class="n">hi</span> <span class="o">=</span> <span class="mi">2</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">htrack</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">config</span><span class="p">(</span><span class="n">height</span><span class="o">=</span><span class="n">hi</span><span class="p">)</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">create_line</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">hi</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">WIDTH</span><span class="p">,</span><span class="n">hi</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="n">fill</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">line_col</span><span class="p">)</span> <span class="c"># baseline</span>
+                <span class="k">if</span> <span class="n">t</span><span class="p">:</span>
+                    <span class="n">top_bp</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">fix</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">fix</span> <span class="k">else</span> <span class="nb">max</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">t</span><span class="p">)</span> <span class="c"># highest score</span>
+                    <span class="n">top</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bp2px</span><span class="p">(</span><span class="n">top_bp</span><span class="p">,</span><span class="n">hi</span><span class="p">,</span><span class="n">top_bp</span><span class="p">)</span>
+                    <span class="k">for</span> <span class="n">k</span><span class="p">,</span><span class="n">feat</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">t</span><span class="p">):</span>
+                        <span class="n">f1</span><span class="p">,</span><span class="n">f2</span><span class="p">,</span><span class="n">g</span> <span class="o">=</span> <span class="p">(</span><span class="n">feat</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">feat</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span><span class="n">feat</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+                        <span class="n">x1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bp2px</span><span class="p">(</span><span class="n">f1</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">minpos</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span><span class="p">)</span>
+                        <span class="n">x2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bp2px</span><span class="p">(</span><span class="n">f2</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">minpos</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span><span class="p">)</span>
+                        <span class="n">s</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">g</span><span class="p">)</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">fix</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">fix</span> <span class="k">else</span> <span class="nb">float</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                        <span class="n">s</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bp2px</span><span class="p">(</span><span class="n">s</span><span class="p">,</span><span class="n">hi</span><span class="p">,</span><span class="n">top_bp</span><span class="p">)</span>
+                        <span class="k">if</span> <span class="n">f1</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">minpos</span><span class="p">:</span> <span class="n">x1</span><span class="o">-=</span><span class="mi">1</span> <span class="c"># no border</span>
+                        <span class="k">if</span> <span class="n">s</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                            <span class="n">r</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">create_rectangle</span><span class="p">(</span><span class="n">x1</span><span class="p">,</span><span class="n">hi</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span><span class="n">x2</span><span class="p">,</span><span class="n">hi</span><span class="o">-</span><span class="n">s</span><span class="o">+</span><span class="mi">5</span><span class="p">,</span><span class="n">fill</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">dens_col</span><span class="p">)</span>
+                            <span class="n">name_map</span><span class="p">[</span><span class="n">c</span><span class="p">][</span><span class="n">r</span><span class="p">]</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">g</span><span class="p">)</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">create_line</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">hi</span><span class="o">-</span><span class="n">top</span><span class="o">+</span><span class="mi">5</span><span class="p">,</span><span class="mi">5</span><span class="p">,</span><span class="n">hi</span><span class="o">-</span><span class="n">top</span><span class="o">+</span><span class="mi">5</span><span class="p">)</span> <span class="c"># vertical scale</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">create_line</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="n">hi</span><span class="p">,</span><span class="mi">2</span><span class="p">,</span><span class="n">hi</span><span class="o">-</span><span class="n">top</span><span class="o">+</span><span class="mi">5</span><span class="p">)</span> <span class="c"># vertical scale</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">create_text</span><span class="p">(</span><span class="mi">6</span><span class="p">,</span><span class="n">hi</span><span class="o">-</span><span class="n">top</span><span class="o">+</span><span class="mi">5</span><span class="p">,</span><span class="n">text</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">top_bp</span><span class="p">),</span><span class="n">anchor</span><span class="o">=</span><span class="s">&#39;w&#39;</span><span class="p">)</span>
+        <span class="n">back</span> <span class="o">=</span> <span class="n">tk</span><span class="o">.</span><span class="n">Frame</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="p">,</span><span class="n">bg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">canvas_bg</span><span class="p">,</span><span class="n">width</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span><span class="p">)</span> <span class="c"># blank background</span>
+        <span class="n">back</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">column</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span><span class="n">row</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">rowspan</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">),</span><span class="n">sticky</span><span class="o">=</span><span class="p">[</span><span class="s">&quot;N&quot;</span><span class="p">,</span><span class="s">&quot;S&quot;</span><span class="p">])</span>
+        <span class="n">back</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">draw_rmargin</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">chrom</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Add a blank frame on the right as a margin, and the chromosome name.&quot;&quot;&quot;</span>
+        <span class="n">w</span> <span class="o">=</span> <span class="n">tk</span><span class="o">.</span><span class="n">Label</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="n">chrom</span><span class="p">,</span><span class="n">bg</span><span class="o">=</span><span class="s">&#39;white&#39;</span><span class="p">)</span>
+        <span class="n">w</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">row</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">column</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">)):</span>
+            <span class="n">w</span> <span class="o">=</span> <span class="n">tk</span><span class="o">.</span><span class="n">Frame</span><span class="p">(</span><span class="n">width</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">rmargin</span><span class="p">,</span><span class="n">height</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">htrack</span><span class="p">,</span><span class="n">bg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bg</span><span class="p">)</span>
+            <span class="n">w</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">row</span><span class="o">=</span><span class="n">n</span><span class="p">,</span><span class="n">column</span><span class="o">=</span><span class="mi">2</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">draw_axis</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">content</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Draw the horizontal scale.&quot;&quot;&quot;</span>
+        <span class="n">c</span> <span class="o">=</span> <span class="n">tk</span><span class="o">.</span><span class="n">Canvas</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">root</span><span class="p">,</span><span class="n">width</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span><span class="p">,</span><span class="n">height</span><span class="o">=</span><span class="mi">2</span><span class="o">*</span><span class="bp">self</span><span class="o">.</span><span class="n">htrack</span><span class="p">,</span><span class="n">bd</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+                      <span class="n">bg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">canvas_bg</span><span class="p">,</span><span class="n">highlightthickness</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">row</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="n">column</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+        <span class="n">pad</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">winfo_reqheight</span><span class="p">()</span><span class="o">/</span><span class="mf">2.</span>
+        <span class="n">c</span><span class="o">.</span><span class="n">create_line</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="n">pad</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">WIDTH</span><span class="p">,</span><span class="n">pad</span><span class="p">,</span><span class="n">fill</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">line_col</span><span class="p">)</span>  <span class="c"># axis</span>
+        <span class="k">for</span> <span class="n">n</span><span class="p">,</span><span class="n">t</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">content</span><span class="p">):</span>
+            <span class="k">for</span> <span class="n">k</span><span class="p">,</span><span class="n">feat</span> <span class="ow">in</span> <span class="nb">enumerate</span><span class="p">(</span><span class="n">t</span><span class="p">):</span>
+                <span class="n">f1</span><span class="p">,</span><span class="n">f2</span> <span class="o">=</span> <span class="p">(</span><span class="n">feat</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span><span class="n">feat</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+                <span class="n">x1</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bp2px</span><span class="p">(</span><span class="n">f1</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">minpos</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span><span class="p">)</span>
+                <span class="n">x2</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bp2px</span><span class="p">(</span><span class="n">f2</span><span class="o">-</span><span class="bp">self</span><span class="o">.</span><span class="n">minpos</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">wcanvas</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">reg_bp</span><span class="p">)</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">create_line</span><span class="p">(</span><span class="n">x1</span><span class="p">,</span><span class="n">pad</span><span class="p">,</span><span class="n">x1</span><span class="p">,</span><span class="n">pad</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span><span class="n">fill</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">line_col</span><span class="p">)</span>
+                <span class="n">c</span><span class="o">.</span><span class="n">create_line</span><span class="p">(</span><span class="n">x2</span><span class="p">,</span><span class="n">pad</span><span class="p">,</span><span class="n">x2</span><span class="p">,</span><span class="n">pad</span><span class="o">+</span><span class="mi">5</span><span class="p">,</span><span class="n">fill</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">line_col</span><span class="p">)</span>
+                <span class="c"># Need to not write overlapping pos</span>
+                <span class="k">if</span> <span class="n">f1</span><span class="o">!=</span><span class="bp">self</span><span class="o">.</span><span class="n">minpos</span> <span class="ow">and</span> <span class="n">f1</span><span class="o">!=</span><span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span><span class="p">:</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">create_text</span><span class="p">(</span><span class="n">x1</span><span class="p">,</span><span class="n">pad</span><span class="o">-</span><span class="mi">5</span><span class="p">,</span><span class="n">text</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">f1</span><span class="p">),</span><span class="n">anchor</span><span class="o">=</span><span class="s">&#39;s&#39;</span><span class="p">)</span>
+                <span class="k">if</span> <span class="n">f2</span><span class="o">!=</span><span class="bp">self</span><span class="o">.</span><span class="n">minpos</span> <span class="ow">and</span> <span class="n">f2</span><span class="o">!=</span><span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span><span class="p">:</span>
+                    <span class="n">c</span><span class="o">.</span><span class="n">create_text</span><span class="p">(</span><span class="n">x2</span><span class="p">,</span><span class="n">pad</span><span class="o">+</span><span class="mi">5</span><span class="p">,</span><span class="n">text</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">f2</span><span class="p">),</span><span class="n">anchor</span><span class="o">=</span><span class="s">&#39;n&#39;</span><span class="p">)</span>
+        <span class="n">min_label</span> <span class="o">=</span> <span class="n">tk</span><span class="o">.</span><span class="n">Label</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">minpos</span><span class="p">),</span><span class="n">bd</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">bg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bg</span><span class="p">,</span><span class="n">anchor</span><span class="o">=</span><span class="s">&#39;e&#39;</span><span class="p">)</span>
+        <span class="n">min_label</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">row</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="n">column</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">sticky</span><span class="o">=</span><span class="s">&#39;e&#39;</span><span class="p">,</span><span class="n">padx</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+        <span class="n">max_label</span> <span class="o">=</span> <span class="n">tk</span><span class="o">.</span><span class="n">Label</span><span class="p">(</span><span class="n">text</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">maxpos</span><span class="p">),</span><span class="n">bd</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span><span class="n">bg</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">bg</span><span class="p">,</span><span class="n">anchor</span><span class="o">=</span><span class="s">&#39;w&#39;</span><span class="p">)</span>
+        <span class="n">max_label</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="n">row</span><span class="o">=</span><span class="nb">len</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">,</span><span class="n">column</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span><span class="n">sticky</span><span class="o">=</span><span class="s">&#39;w&#39;</span><span class="p">,</span><span class="n">padx</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+
+<span class="c">###############################################################################</span>
+
+<span class="k">class</span> <span class="nc">Gless</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+    <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">trackList</span><span class="p">,</span><span class="n">nfeat</span><span class="p">,</span><span class="n">nbp</span><span class="p">,</span><span class="n">sel</span><span class="p">,</span><span class="n">fix</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">trackList</span> <span class="o">=</span> <span class="n">trackList</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span> <span class="o">=</span> <span class="n">nfeat</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">nbp</span> <span class="o">=</span> <span class="n">nbp</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">sel</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">parse_selection</span><span class="p">(</span><span class="n">sel</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">names</span> <span class="o">=</span> <span class="p">[</span><span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">basename</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">trackList</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">types</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">get_type</span><span class="p">(</span><span class="n">n</span><span class="p">)</span> <span class="k">for</span> <span class="n">n</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">]</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stream</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="bp">None</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">needtodraw</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="n">fix</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_score_limits</span><span class="p">(</span><span class="n">fix</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reader</span> <span class="o">=</span> <span class="n">Reader</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trackList</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">nbp</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span> <span class="o">=</span> <span class="n">Drawer</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">names</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">types</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">nbp</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">sel</span><span class="p">,</span><span class="n">fix</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_type</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">filename</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Return whether it is a track with &#39;intervals&#39; or a &#39;density&#39;.&quot;&quot;&quot;</span>
+        <span class="k">with</span> <span class="n">track</span><span class="p">(</span><span class="n">filename</span><span class="p">)</span> <span class="k">as</span> <span class="n">t</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">t</span><span class="o">.</span><span class="n">format</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="s">&#39;bed&#39;</span><span class="p">]:</span>
+                <span class="k">return</span> <span class="s">&#39;intervals&#39;</span>
+            <span class="k">elif</span> <span class="n">t</span><span class="o">.</span><span class="n">format</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span> <span class="ow">in</span> <span class="p">[</span><span class="s">&#39;bedgraph&#39;</span><span class="p">,</span><span class="s">&#39;wig&#39;</span><span class="p">,</span><span class="s">&#39;bigWig&#39;</span><span class="p">,</span><span class="s">&#39;sga&#39;</span><span class="p">]:</span>
+                <span class="k">return</span> <span class="s">&#39;density&#39;</span>
+
+    <span class="k">def</span> <span class="nf">parse_selection</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">sel</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">sel</span><span class="p">:</span> <span class="k">return</span> <span class="bp">None</span>
+        <span class="k">elif</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s">&#39;^chr[0-9XY]*:[0-9XY]+-[0-9XY]+&#39;</span><span class="p">,</span><span class="n">sel</span><span class="p">):</span>
+            <span class="nb">chr</span><span class="p">,</span><span class="n">coord</span> <span class="o">=</span> <span class="n">sel</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;:&#39;</span><span class="p">)</span>
+            <span class="n">st</span><span class="p">,</span><span class="n">en</span> <span class="o">=</span> <span class="n">coord</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;-&#39;</span><span class="p">)</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s">&#39;chr&#39;</span><span class="p">:</span><span class="nb">chr</span><span class="p">,</span><span class="s">&#39;start&#39;</span><span class="p">:(</span><span class="nb">int</span><span class="p">(</span><span class="n">st</span><span class="p">),</span><span class="nb">int</span><span class="p">(</span><span class="n">en</span><span class="p">)),</span><span class="s">&#39;end&#39;</span><span class="p">:(</span><span class="nb">int</span><span class="p">(</span><span class="n">st</span><span class="p">),</span><span class="nb">int</span><span class="p">(</span><span class="n">en</span><span class="p">))}</span>
+        <span class="k">elif</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="s">&#39;^chr[0-9XY]*$&#39;</span><span class="p">,</span><span class="n">sel</span><span class="p">):</span>
+            <span class="k">return</span> <span class="p">{</span><span class="s">&#39;chr&#39;</span><span class="p">:</span><span class="n">sel</span><span class="p">}</span>
+        <span class="k">else</span><span class="p">:</span> <span class="k">print</span> <span class="s">&quot;Bad region formatting, got -s </span><span class="si">%s</span><span class="s">,.&quot;</span> <span class="o">%</span> <span class="n">sel</span><span class="p">;</span> <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">get_score_limits</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span><span class="n">fix</span><span class="p">):</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">fix</span><span class="p">:</span> <span class="k">return</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">fix</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">))</span><span class="o">==</span><span class="mi">1</span><span class="p">:</span> <span class="k">return</span> <span class="p">(</span><span class="mi">0</span><span class="p">,</span><span class="nb">float</span><span class="p">(</span><span class="n">fix</span><span class="p">))</span>
+        <span class="k">elif</span> <span class="nb">len</span><span class="p">(</span><span class="n">fix</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">))</span><span class="o">==</span><span class="mi">2</span><span class="p">:</span> <span class="k">return</span> <span class="nb">tuple</span><span class="p">(</span><span class="nb">float</span><span class="p">(</span><span class="n">x</span><span class="p">)</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">fix</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;,&#39;</span><span class="p">))</span>
+        <span class="k">else</span><span class="p">:</span> <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="s">&quot;Wrong format for -f option: got </span><span class="si">%s</span><span class="s">.&quot;</span> <span class="o">%</span> <span class="n">fix</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">__call__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;Main controller function.&quot;&quot;&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="k">try</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">next</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+            <span class="k">print</span> <span class="s">&quot;Nothing to show&quot;</span>
+            <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+        <span class="n">chrom</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">chrom</span>
+        <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">needtodraw</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">ntimes</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">draw</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">content</span><span class="p">,</span><span class="n">chrom</span><span class="p">)</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">needtodraw</span> <span class="o">=</span> <span class="bp">False</span>
+                <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">chrom_change</span><span class="p">:</span>
+                    <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">chrom</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">next_chrom</span>
+                <span class="n">chrom</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">chrom</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">keydown</span> <span class="o">==</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">27</span><span class="p">):</span> <span class="c"># &quot;Esc&quot; pressed: quit</span>
+                <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">keydown</span> <span class="o">==</span> <span class="s">&#39; &#39;</span><span class="p">:</span> <span class="c"># &quot;Space&quot; pressed: next</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">fast_forward</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">keydown</span> <span class="o">==</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">127</span><span class="p">):</span> <span class="c"># &quot;BackSpace&quot; (&quot;Delete&quot;) pressed: return</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">return_to_beginning</span><span class="p">()</span>
+                <span class="n">chrom</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">chrom</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">keydown</span> <span class="o">==</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">37</span><span class="p">):</span> <span class="c"># Left arrow pressed: shift left</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">slow_reward</span><span class="p">()</span>
+            <span class="k">elif</span> <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">keydown</span> <span class="o">==</span> <span class="nb">chr</span><span class="p">(</span><span class="mi">39</span><span class="p">):</span> <span class="c"># Right arrow pressed: shift right</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">slow_forward</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">reinit</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">minpos</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">maxpos</span> <span class="o">=</span> <span class="mi">0</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">=</span> <span class="mi">1</span>
+
+    <span class="k">def</span> <span class="nf">load_next</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">content</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">stream</span><span class="o">.</span><span class="n">next</span><span class="p">()</span> <span class="c"># Load next data</span>
+            <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">children</span><span class="o">.</span><span class="n">values</span><span class="p">():</span> <span class="c"># Clear the window</span>
+                <span class="n">w</span><span class="o">.</span><span class="n">destroy</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">StopIteration</span><span class="p">:</span>
+            <span class="k">print</span> <span class="s">&quot;End of file&quot;</span>
+            <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">-=</span> <span class="mi">1</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">-=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">needtodraw</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="k">for</span> <span class="n">w</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">root</span><span class="o">.</span><span class="n">children</span><span class="o">.</span><span class="n">values</span><span class="p">():</span> <span class="c"># Clear the window</span>
+            <span class="n">w</span><span class="o">.</span><span class="n">destroy</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">return_to_beginning</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reinit</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">reader</span> <span class="o">=</span> <span class="n">Reader</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">trackList</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">nfeat</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">nbp</span><span class="p">,</span><span class="bp">self</span><span class="o">.</span><span class="n">sel</span><span class="p">)</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_next</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">fast_forward</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">chrom_change</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reinit</span><span class="p">()</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">reader</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">+=</span> <span class="mi">1</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">drawer</span><span class="o">.</span><span class="n">ntimes</span> <span class="o">+=</span> <span class="mi">1</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_next</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">slow_forward</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_next</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">fast_reward</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_next</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">slow_reward</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">load_next</span><span class="p">()</span>
+
+<span class="c">###############################################################################</span>
+
+<span class="sd">&quot;&quot;&quot;If no explicit selection, chromosomes are based on the first track.&quot;&quot;&quot;</span>
+
+<span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="o">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s">&quot;Graphical &#39;less&#39; for track files.&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-n&#39;</span><span class="p">,</span><span class="s">&#39;--nfeat&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+                       <span class="n">help</span><span class="o">=</span><span class="s">&quot;Number of features to display, exclusive with -b. [10]&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-b&#39;</span><span class="p">,</span><span class="s">&#39;--nbp&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+                       <span class="n">help</span><span class="o">=</span><span class="s">&quot;Number of base pairs to display, exclusive with -n.&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-s&#39;</span><span class="p">,</span><span class="s">&#39;--sel&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                       <span class="n">help</span><span class="o">=</span><span class="s">&quot;Region to display, formatted as in &#39;chr1:12-34&#39;, or </span><span class="se">\</span>
+<span class="s">                             a chromosome only (&#39;chr1&#39;).&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;-f&#39;</span><span class="p">,</span><span class="s">&#39;--fix&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                       <span class="n">help</span><span class="o">=</span><span class="s">&quot;Fixed range of scores for the vertical scale. One number </span><span class="se">\</span>
+<span class="s">                            (e.g. -f 10) indicates the max; two numbers separated by a comma </span><span class="se">\</span>
+<span class="s">                            (e.g. -f 5,10) indicate the min and max.&quot;</span><span class="p">)</span>
+    <span class="n">parser</span><span class="o">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">&#39;file&#39;</span><span class="p">,</span> <span class="n">nargs</span><span class="o">=</span><span class="s">&#39;+&#39;</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span>
+                       <span class="n">help</span><span class="o">=</span><span class="s">&#39;A set of track files, separated by spaces&#39;</span><span class="p">)</span>
+    <span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="o">.</span><span class="n">parse_args</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">args</span><span class="o">.</span><span class="n">nbp</span><span class="p">:</span> <span class="n">args</span><span class="o">.</span><span class="n">nfeat</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="k">elif</span> <span class="n">args</span><span class="o">.</span><span class="n">nfeat</span> <span class="ow">and</span> <span class="n">args</span><span class="o">.</span><span class="n">nfeat</span> <span class="o">&gt;</span> <span class="mi">10000</span><span class="p">:</span>
+        <span class="k">print</span> <span class="s">&quot;Up to 10000 features permitted, got -n </span><span class="si">%s</span><span class="s">.&quot;</span> <span class="o">%</span> <span class="n">args</span><span class="o">.</span><span class="n">nfeat</span><span class="p">;</span> <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="n">Gless</span><span class="p">(</span><span class="n">args</span><span class="o">.</span><span class="n">file</span><span class="p">,</span><span class="n">args</span><span class="o">.</span><span class="n">nfeat</span><span class="p">,</span><span class="n">args</span><span class="o">.</span><span class="n">nbp</span><span class="p">,</span><span class="n">args</span><span class="o">.</span><span class="n">sel</span><span class="p">,</span><span class="n">args</span><span class="o">.</span><span class="n">fix</span><span class="p">)()</span>
+
+<span class="k">if</span> <span class="n">__name__</span> <span class="o">==</span> <span class="s">&#39;__main__&#39;</span><span class="p">:</span>
+    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+
+<span class="c">#------------------------------------------------------#</span>
+<span class="c"># This code was written by Julien Delafontaine         #</span>
+<span class="c"># Bioinformatics and Biostatistics Core Facility, EPFL #</span>
+<span class="c"># julien.delafontaine@epfl.ch                          #</span>
+<span class="c">#------------------------------------------------------#</span>
+</pre></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="../genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="../py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="../index.html">gless 1.0.0 documentation</a> &raquo;</li>
+          <li><a href="index.html" >Module code</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013, Julien Delafontaine.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.1.
+    </div>
+  </body>
+</html>

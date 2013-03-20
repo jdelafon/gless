@@ -4,31 +4,34 @@
 Description:
 ============
 This application is designed to be used as a graphical equivalent of the `less` command
-in Unix to better visualize track files.
-
-What it does:
--------------
-It will give you an insight of the content of
+in Unix to better visualize track files. It will give you an insight of the content of
 your files that is probably telling more than columns of numbers.
 
 If the library `bbcflib` is found on your system, `btrack` will be used and will
 recognize .bed, .bedgraph, .wig, .sga, .bigWig, .sql, .sam formats. Else it can still
 read .bed and .bedGraph files.
 
-What it does not (for the moment):
-----------------------------------
 Since files are read sequentially (without loading temp in memory), it does not read
-backwards.
-Also the chromosomes names present in each file are not known in advance.
+backwards. Also the chromosomes names present in each file are not known in advance.
 The first file you give as input is taken as a reference. This can cause chromosomes
 to be skipped in the secondary files, if their names or order is different.
 
-Commands:
-=========
-Use the SPACE bar to read forward, and ESC (or Delete) to return to the beginning.
+Usage:
+======
+Press the SPACE bar to read forward, RETURN (or Delete) to return to the beginning,
+ESC to quit.
 
-(Near) Future functionalities:
-==============================
+Options:
+
+* -n nfeat: display the next *nfeat* features (from all tracks together).
+* -b nbp: display the next *nbp* base pairs window.
+* -f fix: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`.
+* -s sel: selection: either a chromosome name, or a region like `chr1:10-50`.
+
+Miscellaneous:
+==============
+Future functionalities:
+
 * Addition of strand information.
 * Partial scroll (features 1 by 1, or fraction of the window) with arrow keys.
 * Scroll backwards (buffer with the last 10 windows displayed).
@@ -37,7 +40,7 @@ Use the SPACE bar to read forward, and ESC (or Delete) to return to the beginnin
 * Other ideas?
 
 Known issues:
-=============
+
 * Bug on OSX: if it says something like "Could not restore the previous window", remove
   /Users/<User>/Library/Saved Application State/org.python.python.savedState .
 * If -b/-n and -s are specified, the length of the selection window is used instead
@@ -52,8 +55,8 @@ import csv
 ###############################################################################
 
 class Parser(object):
-    """A replacement for btrack when bbcflib is not found, able to parse
-       bed and bedGraph formats only."""
+    #A replacement for btrack when bbcflib is not found, able to parse
+    #bed and bedGraph formats only. Called in the Reader class."""
     def __init__(self,filename):
         self.path = os.path.abspath(filename)
         self.format = os.path.splitext(filename)[1][1:]
@@ -88,7 +91,6 @@ except ImportError:
 ###############################################################################
 
 class Memory(object):
-    """Remembers what has already been read, so that one can go back."""
     def __init__(self):
         self.content = []
 
@@ -118,6 +120,7 @@ class Reader(object):
             self.nbp = None
 
     def init_chr(self):
+        """Find the initial chromosome name."""
         for t in self.tracks:
             try: return t.read().next()[0]
             except StopIteration: continue
@@ -134,6 +137,7 @@ class Reader(object):
         return content
 
     def go_to_selection(self,streams):
+        """Skip all features not passing the selection filter before filling the buffer."""
         nosel = (0,sys.maxint)
         skipped = 0
         self.temp = [s.next() for s in streams]
@@ -159,6 +163,7 @@ class Reader(object):
                 self.ntimes += skipped / self.nfeat
 
     def read_nfeat(self,streams):
+        """Yield the next *nfeat* features."""
         self.temp = [[x,n] for n,x in enumerate(self.temp)]
         toremove = []
         # Load *nfeat* feats of each track in the buffer
@@ -208,6 +213,7 @@ class Reader(object):
             else: break
 
     def read_nbp(self,streams):
+        """Yield all features in the next *nbp* base pairs window."""
         # Repeat & yield each time the function is called
         while self.available_streams:
             maxpos = self.ntimes*self.nbp
@@ -324,6 +330,10 @@ class Drawer(object):
         self.draw_rmargin(chrom)
         self.draw_axis(content)
         #self.root.wm_attributes("-topmost", 1) # makes the window stay on top
+        def _finish():
+            self.root.destroy()
+            sys.exit(0)
+        self.root.protocol("WM_DELETE_WINDOW", _finish)
         self.root.mainloop()
 
     def bp2px(self,x,wwidth,reg_bp):
@@ -459,6 +469,7 @@ class Gless(object):
                 return 'density'
 
     def parse_selection(self,sel):
+        """Transform 'chr1:12-13' into {'chr':'chr1','start':(12,13),'end':(12,13)}."""
         if not sel: return None
         elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
             chr,coord = sel.split(':')
@@ -469,6 +480,7 @@ class Gless(object):
         else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
 
     def get_score_limits(self,fix):
+        """Transform '5,100' into (5,100)."""
         if not fix: return
         elif len(fix.split(','))==1: return (0,float(fix))
         elif len(fix.split(','))==2: return tuple(float(x) for x in fix.split(','))
@@ -503,11 +515,13 @@ class Gless(object):
                 self.slow_forward()
 
     def reinit(self):
+        """Called after chrom change or returning to the beginning."""
         self.drawer.minpos = 0
         self.drawer.maxpos = 0
         self.reader.ntimes = 1
 
     def load_next(self):
+        """Load next set of features and draw the new figure."""
         try:
             self.content = self.stream.next() # Load next data
             for w in self.drawer.root.children.values(): # Clear the window
