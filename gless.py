@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-Description:
-============
+Description
+===========
 This application is designed to be used as a graphical equivalent of the `less` command
 in Unix to better visualize track files. It will give you an insight of the content of
 your files that is probably telling more than columns of numbers.
@@ -16,8 +16,8 @@ backwards. Also the chromosomes names present in each file are not known in adva
 The first file you give as input is taken as a reference. This can cause chromosomes
 to be skipped in the secondary files, if their names or order is different.
 
-Usage:
-======
+Usage
+=====
 Press the SPACE bar to read forward, RETURN (or Delete) to return to the beginning,
 ESC to quit.
 
@@ -28,8 +28,8 @@ Options:
 * -f fix: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`.
 * -s sel: selection: either a chromosome name, or a region like `chr1:10-50`.
 
-Miscellaneous:
-==============
+Miscellaneous
+=============
 Future functionalities:
 
 * Addition of strand information.
