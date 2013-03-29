@@ -315,7 +315,7 @@ class Drawer(object):
                 # next times: keep this shift
                 elif self.sel and self.sel.get('start'):
                     self.minpos = (self.ntimes-1)*self.nbp + self.sel['start'][0]
-                    self.maxpos = self.ntimes*self.nbp
+                    self.maxpos = self.ntimes*self.nbp + self.sel['start'][0]
                 # no selection
                 else:
                     self.minpos = (self.ntimes-1)*self.nbp
