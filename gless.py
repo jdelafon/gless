@@ -26,7 +26,7 @@ Options:
 * -n nfeat: display the next *nfeat* features (from all tracks together).
 * -b nbp: display the next *nbp* base pairs window.
 * -f fix: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`.
-* -s sel: selection: either a chromosome name, or a region like `chr1:10-50`.
+* -s sel: selection: either a chromosome name, or a region specified as <chr>:<start>.
 
 Miscellaneous
 =============
@@ -43,8 +43,6 @@ Known issues:
 
 * Bug on OSX: if it says something like "Could not restore the previous window", remove
   /Users/<User>/Library/Saved Application State/org.python.python.savedState .
-* If -b/-n and -s are specified, the length of the selection window is used instead
-  of the -b/-n options.
 """
 
 import Tkinter as tk
@@ -142,15 +140,18 @@ class Reader(object):
         skipped = 0
         self.temp = [s.next() for s in streams]
         if self.sel and self.ntimes == 1:
+            selected_chrom = self.sel.get('chr',self.chrom)
+            selected_start = self.sel.get('start',nosel)[0]
             for i,stream in enumerate(streams):
                 try:
                     chrom,start,end = self.temp[i][:3]
-                    while chrom != self.sel.get('chr',self.chrom) \
-                    or not (self.sel.get('start',nosel)[0] < start < self.sel.get('start',nosel)[1]) \
-                    or not (self.sel.get('end',nosel)[0] < end < self.sel.get('end',nosel)[1]):
-                        self.temp[i] = stream.next()
-                        chrom,start,end = self.temp[i][:3]
-                        skipped += 1
+                    while chrom != selected_chrom or start < selected_start:
+                        if end > selected_start: # overlapping
+                            self.temp[i] = (chrom,selected_start,end)+self.temp[i][3:]
+                        else:
+                            self.temp[i] = stream.next()
+                            chrom,start,end = self.temp[i][:3]
+                            skipped += 1
                 except StopIteration:
                     self.temp.pop(i)
                     self.available_streams.remove(i)
@@ -308,21 +309,19 @@ class Drawer(object):
         if self.nbp:
             if self.sel and self.sel.get('start') and self.maxpos == 0:
                 self.minpos = self.sel['start'][0]
-                self.maxpos = self.sel['end'][1]
             else:
                 self.minpos = (self.ntimes-1)*self.nbp
-                self.maxpos = self.ntimes*self.nbp
-                self.reg_bp = self.maxpos - self.minpos
+            self.maxpos = self.ntimes*self.nbp
+            self.reg_bp = self.maxpos - self.minpos
         elif self.nfeat:
             if self.ntimes > 1 and self.maxpos > 0:
                 self.minpos = self.maxpos
                 self.maxpos = max(t[-1][1] for t in content if t)
             elif self.sel and self.sel.get('start') and self.maxpos == 0:
                 self.minpos = self.sel['start'][0]
-                self.maxpos = self.sel['end'][1]
             else:
                 self.minpos = max(0, min(t[0][0] for t in content if t))
-                self.maxpos = max(t[-1][1] for t in content if t)
+            self.maxpos = max(t[-1][1] for t in content if t)
             self.reg_bp = self.maxpos - self.minpos
         self.reg_bp = float(max(self.reg_bp,self.nbp))
         self.draw_labels()
@@ -469,12 +468,11 @@ class Gless(object):
                 return 'density'
 
     def parse_selection(self,sel):
-        """Transform 'chr1:12-13' into {'chr':'chr1','start':(12,13),'end':(12,13)}."""
+        """Transform 'chr1:12' into {'chr':'chr1','start':(12,12)}."""
         if not sel: return None
-        elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
-            chr,coord = sel.split(':')
-            st,en = coord.split('-')
-            return {'chr':chr,'start':(int(st),int(en)),'end':(int(st),int(en))}
+        elif re.search('^chr[0-9XY]*:[0-9XY]+',sel):
+            chr,start = sel.split(':')
+            return {'chr':chr,'start':(int(start),int(start))}
         elif re.search('^chr[0-9XY]*$',sel):
             return {'chr':sel}
         else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
@@ -569,8 +567,8 @@ def main():
     parser.add_argument('-b','--nbp', default=None, type=int,
                        help="Number of base pairs to display, exclusive with -n.")
     parser.add_argument('-s','--sel', default=None,
-                       help="Region to display, formatted as in 'chr1:12-34', or \
-                             a chromosome only ('chr1').")
+                       help="Region to display, formatted as <chr>:<start> (e.g. 'chr1:12'),\
+                             or a chromosome name only ('chr1').")
     parser.add_argument('-f','--fix', default=None,
                        help="Fixed range of scores for the vertical scale. One number \
                             (e.g. -f 10) indicates the max; two numbers separated by a comma \
