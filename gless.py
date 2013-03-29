@@ -264,6 +264,7 @@ class Drawer(object):
         self.ntimes = 0    # number of times the draw function is called
         self.maxpos = 0    # rightmost coordinate to display
         self.minpos = 0    # leftmost coordinate to display
+        self.nticks = 10   # number of ticks on the horiz axis if regular scale
         self.keydown = ''
         # Geometry
         self.root = tk.Tk()
@@ -456,8 +457,7 @@ class Drawer(object):
                     if f2!=self.minpos and f2!=self.maxpos:
                         c.create_text(x2,pad+5,text=str(f2),anchor='n')
         else: # regular, linear scale
-            nticks = 10
-            ticksize = (self.maxpos-self.minpos)//nticks
+            ticksize = (self.maxpos-self.minpos) // self.nticks
             for n,k in enumerate(range(self.minpos+ticksize,self.maxpos,ticksize)):
                 x = self.bp2px(k-self.minpos,self.wcanvas,self.reg_bp)
                 if n%2 == 0:
