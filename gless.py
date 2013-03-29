@@ -19,7 +19,7 @@ to be skipped in the secondary files, if their names or order is different.
 Usage
 =====
 Press the SPACE bar to read forward, RETURN (or Delete) to return to the beginning,
-ESC to quit.
+ESC to quit. Move the cursor on elements to display their name/score.
 
 Options:
 
@@ -32,7 +32,9 @@ Known issues:
 =============
 
 * Bug on OSX: if it says something like "Could not restore the previous window", remove
-  /Users/<User>/Library/Saved Application State/org.python.python.savedState .
+  `/Users/<User>/Library/Saved Application State/org.python.python.savedState` .
+* Focus on the main window is not automatic on some OX.
+* The main window may not appear on top on some OS.
 """
 
 import Tkinter as tk

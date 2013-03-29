@@ -1,0 +1,16 @@
+Graphical "less" for track files (bed, bedgraph etc.).
+
+Installation:
+* Type "git clone git@github.com:delafont/gless.git" at the location where you want to install it.
+* Set your PATH environment variable to the same location.
+* Run "gless" on the command-line, "gless -h" for usage instructions.
+* More documentation in the doc/_build/html folder.
+
+If the library `bbcflib` is found on your system, `btrack` will be used and will
+recognize .bed, .bedgraph, .wig, .sga, .bigWig, .sql, .sam formats. Else it can still
+read .bed and .bedGraph files.
+
+Author:
+Julien Delafontaine,
+BBCF,EPFL,2013
+julien.delafontaine@yandex.com.
