@@ -301,34 +301,38 @@ class Drawer(object):
             elif event.keysym == 'BackSpace':
                 self.keydown = chr(127)
                 self.root.quit()
-                pass # Return to the beginning
+
+        def set_boundaries():
+            if self.nbp:
+                if self.sel and self.sel.get('start') and self.maxpos == 0:
+                    self.minpos = self.sel['start'][0]
+                else:
+                    self.minpos = (self.ntimes-1)*self.nbp
+                self.maxpos = self.ntimes*self.nbp
+                self.reg_bp = self.maxpos - self.minpos
+            elif self.nfeat:
+                if self.ntimes > 1 and self.maxpos > 0:
+                    self.minpos = self.maxpos
+                    self.maxpos = max(t[-1][1] for t in content if t)
+                elif self.sel and self.sel.get('start') and self.maxpos == 0:
+                    self.minpos = self.sel['start'][0]
+                else:
+                    self.minpos = max(0, min(t[0][0] for t in content if t))
+                self.maxpos = max(t[-1][1] for t in content if t)
+                self.reg_bp = self.maxpos - self.minpos
+            self.reg_bp = float(max(self.reg_bp,self.nbp))
+
         self.root.title("gless")
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
         self.root.focus_set() # not working?
-        if self.nbp:
-            if self.sel and self.sel.get('start') and self.maxpos == 0:
-                self.minpos = self.sel['start'][0]
-            else:
-                self.minpos = (self.ntimes-1)*self.nbp
-            self.maxpos = self.ntimes*self.nbp
-            self.reg_bp = self.maxpos - self.minpos
-        elif self.nfeat:
-            if self.ntimes > 1 and self.maxpos > 0:
-                self.minpos = self.maxpos
-                self.maxpos = max(t[-1][1] for t in content if t)
-            elif self.sel and self.sel.get('start') and self.maxpos == 0:
-                self.minpos = self.sel['start'][0]
-            else:
-                self.minpos = max(0, min(t[0][0] for t in content if t))
-            self.maxpos = max(t[-1][1] for t in content if t)
-            self.reg_bp = self.maxpos - self.minpos
-        self.reg_bp = float(max(self.reg_bp,self.nbp))
+        set_boundaries()
         self.draw_labels()
         self.draw_tracks(content)
         self.draw_rmargin(chrom)
         self.draw_axis(content)
-        #self.root.wm_attributes("-topmost", 1) # makes the window stay on top
+        try: self.root.wm_attributes("-topmost", 1) # makes the window stay on top
+        except: pass # depends on the OS
         def _finish():
             self.root.destroy()
             sys.exit(0)
