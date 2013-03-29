@@ -1,0 +1,10 @@
+// rotate coordinates label -> impossible in Tkinter...
+* if too many labels, display a regular scale
+* handle strand info for bed
+* scroll partially/backwards
+* redimension main window
+* clip correctly if feat starts exactly at minpos / ends at maxpos
+  (-1 to start/+1 to end otherwise)
+* fix bug with sel = last chromosome
+* QuantifyTable kind of input
+

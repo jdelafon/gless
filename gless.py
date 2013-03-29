@@ -28,18 +28,8 @@ Options:
 * -f fix: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`.
 * -s sel: selection: either a chromosome name, or a region specified as <chr>:<start>.
 
-Miscellaneous
-=============
-Future functionalities:
-
-* Addition of strand information.
-* Partial scroll (features 1 by 1, or fraction of the window) with arrow keys.
-* Scroll backwards (buffer with the last 10 windows displayed).
-* Dynamic dimensions for the main window (?).
-* Better display of numerous coordinates on the horizontal scale.
-* Other ideas?
-
 Known issues:
+=============
 
 * Bug on OSX: if it says something like "Could not restore the previous window", remove
   /Users/<User>/Library/Saved Application State/org.python.python.savedState .
