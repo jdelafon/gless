@@ -151,6 +151,7 @@ class Reader(object):
                     while start < selected_start:
                         if end > selected_start: # overlapping
                             self.temp[i] = (chrom,selected_start,end)+self.temp[i][3:]
+                            break
                         else:
                             self.temp[i] = stream.next()
                             chrom,start,end = self.temp[i][:3]
@@ -212,15 +213,15 @@ class Reader(object):
                         self.temp[k][0] = (x[0],maxpos,x[2])+x[3:]
                         unseen.remove(n)
                     if not unseen: break
-                #print "Toyield", toyield
                 yield toyield
             else: break
 
     def read_nbp(self,streams):
         """Yield all features in the next *nbp* base pairs window."""
         # Repeat & yield each time the function is called
+        shift = self.sel.get('start',[0])[0] if self.sel else 0
         while self.available_streams:
-            maxpos = self.ntimes*self.nbp
+            maxpos = self.ntimes*self.nbp + shift
             toyield = [[] for _ in streams]
             toremove = []
             self.chrom_change = False
@@ -246,7 +247,6 @@ class Reader(object):
                 self.next_chrom = chrom[0]
                 self.chrom_change = True
             if any(toyield):
-                #print "Toyield", toyield
                 yield toyield
             else:
                 yield [[(0,0,'00')] for _ in streams]
@@ -307,11 +307,18 @@ class Drawer(object):
 
         def set_boundaries():
             if self.nbp:
+                # first time: shift to selection
                 if self.sel and self.sel.get('start') and self.maxpos == 0:
                     self.minpos = self.sel['start'][0]
+                    self.maxpos = self.minpos + self.nbp
+                # next times: keep this shift
+                elif self.sel and self.sel.get('start'):
+                    self.minpos = (self.ntimes-1)*self.nbp + self.sel['start'][0]
+                    self.maxpos = self.ntimes*self.nbp
+                # no selection
                 else:
                     self.minpos = (self.ntimes-1)*self.nbp
-                self.maxpos = self.ntimes*self.nbp
+                    self.maxpos = self.ntimes*self.nbp
                 self.reg_bp = self.maxpos - self.minpos
             elif self.nfeat:
                 if self.ntimes > 1 and self.maxpos > 0:
@@ -329,6 +336,7 @@ class Drawer(object):
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
         self.root.focus_set() # not working?
+        self.root.resizable(0,0) # disable window resizing
         set_boundaries()
         self.draw_labels()
         self.draw_tracks(content)
@@ -433,18 +441,31 @@ class Drawer(object):
         c.grid(row=len(self.names)+1,column=1)
         pad = c.winfo_reqheight()/2.
         c.create_line(0,pad,self.WIDTH,pad,fill=self.line_col)  # axis
-        for n,t in enumerate(content):
-            for k,feat in enumerate(t):
-                f1,f2 = (feat[0],feat[1])
-                x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
-                x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
-                c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
-                c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
-                # Need to not write overlapping pos
-                if f1!=self.minpos and f1!=self.maxpos:
-                    c.create_text(x1,pad-5,text=str(f1),anchor='s')
-                if f2!=self.minpos and f2!=self.maxpos:
-                    c.create_text(x2,pad+5,text=str(f2),anchor='n')
+        if sum(len(c) for c in content) < 30:
+            for n,t in enumerate(content):
+                for k,feat in enumerate(t):
+                    f1,f2 = (feat[0],feat[1])
+                    x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
+                    # ticks
+                    c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
+                    c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
+                    # labels
+                    if f1!=self.minpos and f1!=self.maxpos:
+                        c.create_text(x1,pad-5,text=str(f1),anchor='s')
+                    if f2!=self.minpos and f2!=self.maxpos:
+                        c.create_text(x2,pad+5,text=str(f2),anchor='n')
+        else: # regular, linear scale
+            nticks = 10
+            ticksize = (self.maxpos-self.minpos)//nticks
+            for n,k in enumerate(range(self.minpos+ticksize,self.maxpos,ticksize)):
+                x = self.bp2px(k-self.minpos,self.wcanvas,self.reg_bp)
+                if n%2 == 0:
+                    c.create_line(x,pad,x,pad-5,fill=self.line_col)
+                    c.create_text(x,pad-5,text=str(k),anchor='s')
+                else:
+                    c.create_line(x,pad,x,pad+5,fill=self.line_col)
+                    c.create_text(x,pad+5,text=str(k),anchor='n')
         min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
         min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
         max_label = tk.Label(text=str(self.maxpos),bd=0,bg=self.bg,anchor='w')
@@ -483,7 +504,7 @@ class Gless(object):
             return {'chr':chr,'start':(int(start),int(start))}
         elif re.search('^chr[0-9XY]*$',sel):
             return {'chr':sel}
-        else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
+        else: sys.exit("Bad region formatting, got '-s %s' ." % sel)
 
     def get_score_limits(self,fix):
         """Transform '5,100' into (5,100)."""
@@ -497,8 +518,7 @@ class Gless(object):
         self.stream = self.reader.read()
         try: self.content = self.stream.next()
         except StopIteration:
-            print "Nothing to show"
-            sys.exit(0)
+            sys.exit("Nothing to show")
         chrom = self.reader.chrom
         while True:
             if self.needtodraw:
