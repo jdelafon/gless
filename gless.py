@@ -605,8 +605,6 @@ def main():
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
     if args.nbp: args.nfeat = None
-    elif args.nfeat and args.nfeat > 10000:
-        print "Up to 10000 features permitted, got -n %s." % args.nfeat; sys.exit(1)
     Gless(args.file,args.nfeat,args.nbp,args.sel,args.fix)()
 
 if __name__ == '__main__':
