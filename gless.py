@@ -136,16 +136,19 @@ class Reader(object):
 
     def go_to_selection(self,streams):
         """Skip all features not passing the selection filter before filling the buffer."""
-        nosel = (0,sys.maxint)
         skipped = 0
         self.temp = [s.next() for s in streams]
         if self.sel and self.ntimes == 1:
             selected_chrom = self.sel.get('chr',self.chrom)
-            selected_start = self.sel.get('start',nosel)[0]
+            selected_start = self.sel.get('start',[0])[0]
             for i,stream in enumerate(streams):
                 try:
                     chrom,start,end = self.temp[i][:3]
-                    while chrom != selected_chrom or start < selected_start:
+                    while chrom != selected_chrom:
+                        self.temp[i] = stream.next()
+                        chrom,start,end = self.temp[i][:3]
+                        skipped += 1
+                    while start < selected_start:
                         if end > selected_start: # overlapping
                             self.temp[i] = (chrom,selected_start,end)+self.temp[i][3:]
                         else:
@@ -389,6 +392,7 @@ class Drawer(object):
                     x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                     if f1 == self.minpos: x1-=1 # no border
                     r = c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
+                    if g == '00': g = "%d-%d" % (f1,f2)
                     name_map[c][r] = g
             elif type == 'density':
                 hi = 2*self.htrack
