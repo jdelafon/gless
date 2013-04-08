@@ -1,4 +1,42 @@
 #!/usr/bin/env python
+
+"""
+Description
+===========
+This application is designed to be used as a graphical equivalent of the `less` command
+in Unix to better visualize track files. It will give you an insight of the content of
+your files that is probably telling more than columns of numbers.
+
+If the library `bbcflib` is found on your system, `btrack` will be used and will
+recognize .bed, .bedgraph, .wig, .sga, .bigWig, .sql, .sam formats. Else it can still
+read .bed and .bedGraph files.
+
+Since files are read sequentially (without loading temp in memory), it does not read
+backwards. Also the chromosomes names present in each file are not known in advance.
+The first file you give as input is taken as a reference. This can cause chromosomes
+to be skipped in the secondary files, if their names or order is different.
+
+Usage
+=====
+Press the SPACE bar to read forward, RETURN (or Delete) to return to the beginning,
+ESC to quit. Move the cursor on elements to display their name/score.
+
+Options:
+
+* -n nfeat: display the next *nfeat* features (from all tracks together).
+* -b nbp: display the next *nbp* base pairs window.
+* -f fix: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`.
+* -s sel: selection: either a chromosome name, or a region specified as <chr>:<start>.
+
+Known issues:
+=============
+
+* Bug on OSX: if it says something like "Could not restore the previous window", remove
+  `/Users/<User>/Library/Saved Application State/org.python.python.savedState` .
+* Focus on the main window is not automatic on some OX.
+* The main window may not appear on top on some OS.
+"""
+
 import Tkinter as tk
 import os,sys
 import argparse,re
@@ -7,8 +45,8 @@ import csv
 ###############################################################################
 
 class Parser(object):
-    """A replacement for btrack when bbcflib is not found, able to parse
-       bed and bedGraph formats only."""
+    #A replacement for btrack when bbcflib is not found, able to parse
+    #bed and bedGraph formats only. Called in the Reader class."""
     def __init__(self,filename):
         self.path = os.path.abspath(filename)
         self.format = os.path.splitext(filename)[1][1:]
@@ -20,17 +58,20 @@ class Parser(object):
     def read(self,fields=None,selection=None):
         with open(self.path) as f:
             reader = csv.reader(f,delimiter='\t',quotechar='|')
+            line0 = reader.next()
+            nfields = len(line0)
+            if not line0[0].startswith("track") or line0[0].startswith("#"): f.seek(0)
+            fun = float if self.format.lower()=='bedgraph' else lambda x:x
             for line in reader:
-            #for line in f:
-                #line = line.strip().split()
                 try:
                     chr,start,end = (line[0],int(line[1]),int(line[2]))
+                    other = fun(line[3]) if nfields > 3 else "00"
                 except (IndexError,ValueError):
                     sys.exit(("Library 'bbcflib' not found. "
                               "Only 'bed' and 'bedGraph' formats available. "
                               "Wrong line in file %s:\n%s"
                               % (os.path.basename(self.path),'\t'.join(line)) ))
-                yield tuple(line)
+                yield (chr,start,end,other)
 try:
     from bbcflib.btrack import track
     assert track
@@ -40,7 +81,6 @@ except ImportError:
 ###############################################################################
 
 class Memory(object):
-    """Remembers what has already been read, so that one can go back."""
     def __init__(self):
         self.content = []
 
@@ -70,6 +110,7 @@ class Reader(object):
             self.nbp = None
 
     def init_chr(self):
+        """Find the initial chromosome name."""
         for t in self.tracks:
             try: return t.read().next()[0]
             except StopIteration: continue
@@ -86,19 +127,27 @@ class Reader(object):
         return content
 
     def go_to_selection(self,streams):
-        nosel = (0,sys.maxint)
+        """Skip all features not passing the selection filter before filling the buffer."""
         skipped = 0
         self.temp = [s.next() for s in streams]
         if self.sel and self.ntimes == 1:
+            selected_chrom = self.sel.get('chr',self.chrom)
+            selected_start = self.sel.get('start',[0])[0]
             for i,stream in enumerate(streams):
                 try:
                     chrom,start,end = self.temp[i][:3]
-                    while chrom != self.sel.get('chr',self.chrom) \
-                    or not (self.sel.get('start',nosel)[0] < start < self.sel.get('start',nosel)[1]) \
-                    or not (self.sel.get('end',nosel)[0] < end < self.sel.get('end',nosel)[1]):
+                    while chrom != selected_chrom:
                         self.temp[i] = stream.next()
                         chrom,start,end = self.temp[i][:3]
                         skipped += 1
+                    while start < selected_start:
+                        if end > selected_start: # overlapping
+                            self.temp[i] = (chrom,selected_start,end)+self.temp[i][3:]
+                            break
+                        else:
+                            self.temp[i] = stream.next()
+                            chrom,start,end = self.temp[i][:3]
+                            skipped += 1
                 except StopIteration:
                     self.temp.pop(i)
                     self.available_streams.remove(i)
@@ -111,6 +160,7 @@ class Reader(object):
                 self.ntimes += skipped / self.nfeat
 
     def read_nfeat(self,streams):
+        """Yield the next *nfeat* features."""
         self.temp = [[x,n] for n,x in enumerate(self.temp)]
         toremove = []
         # Load *nfeat* feats of each track in the buffer
@@ -155,14 +205,15 @@ class Reader(object):
                         self.temp[k][0] = (x[0],maxpos,x[2])+x[3:]
                         unseen.remove(n)
                     if not unseen: break
-                #print "Toyield", toyield
                 yield toyield
             else: break
 
     def read_nbp(self,streams):
+        """Yield all features in the next *nbp* base pairs window."""
         # Repeat & yield each time the function is called
+        shift = self.sel.get('start',[0])[0] if self.sel else 0
         while self.available_streams:
-            maxpos = self.ntimes*self.nbp
+            maxpos = self.ntimes*self.nbp + shift
             toyield = [[] for _ in streams]
             toremove = []
             self.chrom_change = False
@@ -188,11 +239,9 @@ class Reader(object):
                 self.next_chrom = chrom[0]
                 self.chrom_change = True
             if any(toyield):
-                #print "Toyield", toyield
                 yield toyield
             else:
                 yield [[(0,0,'00')] for _ in streams]
-
 
 ###############################################################################
 
@@ -207,6 +256,7 @@ class Drawer(object):
         self.ntimes = 0    # number of times the draw function is called
         self.maxpos = 0    # rightmost coordinate to display
         self.minpos = 0    # leftmost coordinate to display
+        self.nticks = 10   # number of ticks on the horiz axis if regular scale
         self.keydown = ''
         # Geometry
         self.root = tk.Tk()
@@ -247,36 +297,46 @@ class Drawer(object):
             elif event.keysym == 'BackSpace':
                 self.keydown = chr(127)
                 self.root.quit()
-                pass # Return to the beginning
+
+        def set_boundaries():
+            if self.nbp:
+                # first time: shift to selection
+                if self.sel and self.sel.get('start') and self.maxpos == 0:
+                    self.minpos = self.sel['start'][0]
+                    self.maxpos = self.minpos + self.nbp
+                # next times: keep this shift
+                elif self.sel and self.sel.get('start'):
+                    self.minpos = (self.ntimes-1)*self.nbp + self.sel['start'][0]
+                    self.maxpos = self.ntimes*self.nbp + self.sel['start'][0]
+                # no selection
+                else:
+                    self.minpos = (self.ntimes-1)*self.nbp
+                    self.maxpos = self.ntimes*self.nbp
+                self.reg_bp = self.maxpos - self.minpos
+            elif self.nfeat:
+                if self.ntimes > 1 and self.maxpos > 0:
+                    self.minpos = self.maxpos
+                    self.maxpos = max(t[-1][1] for t in content if t)
+                elif self.sel and self.sel.get('start') and self.maxpos == 0:
+                    self.minpos = self.sel['start'][0]
+                else:
+                    self.minpos = max(0, min(t[0][0] for t in content if t))
+                self.maxpos = max(t[-1][1] for t in content if t)
+                self.reg_bp = self.maxpos - self.minpos
+            self.reg_bp = float(max(self.reg_bp,self.nbp))
+
         self.root.title("gless")
         self.root.bind("<Key>", keyboard)
         self.root.config(bg=self.bg)
         self.root.focus_set() # not working?
-        if self.nbp:
-            if self.sel and self.sel.get('start') and self.maxpos == 0:
-                self.minpos = self.sel['start'][0]
-                self.maxpos = self.sel['end'][1]
-            else:
-                self.minpos = (self.ntimes-1)*self.nbp
-                self.maxpos = self.ntimes*self.nbp
-                self.reg_bp = self.maxpos - self.minpos
-        elif self.nfeat:
-            if self.ntimes > 1 and self.maxpos > 0:
-                self.minpos = self.maxpos
-                self.maxpos = max(t[-1][1] for t in content if t)
-            elif self.sel and self.sel.get('start') and self.maxpos == 0:
-                self.minpos = self.sel['start'][0]
-                self.maxpos = self.sel['end'][1]
-            else:
-                self.minpos = max(0, min(t[0][0] for t in content if t))
-                self.maxpos = max(t[-1][1] for t in content if t)
-            self.reg_bp = self.maxpos - self.minpos
-        self.reg_bp = float(max(self.reg_bp,self.nbp))
+        self.root.resizable(0,0) # disable window resizing
+        set_boundaries()
         self.draw_labels()
         self.draw_tracks(content)
         self.draw_rmargin(chrom)
         self.draw_axis(content)
-        #self.root.wm_attributes("-topmost", 1) # makes the window stay on top
+        try: self.root.wm_attributes("-topmost", 1) # makes the window stay on top
+        except: pass # depends on the OS
         def _finish():
             self.root.destroy()
             sys.exit(0)
@@ -333,6 +393,7 @@ class Drawer(object):
                     x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
                     if f1 == self.minpos: x1-=1 # no border
                     r = c.create_rectangle(x1,y1,x2,y2,fill=self.feat_col)
+                    if g == '00': g = "%d-%d" % (f1,f2)
                     name_map[c][r] = g
             elif type == 'density':
                 hi = 2*self.htrack
@@ -373,18 +434,30 @@ class Drawer(object):
         c.grid(row=len(self.names)+1,column=1)
         pad = c.winfo_reqheight()/2.
         c.create_line(0,pad,self.WIDTH,pad,fill=self.line_col)  # axis
-        for n,t in enumerate(content):
-            for k,feat in enumerate(t):
-                f1,f2 = (feat[0],feat[1])
-                x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
-                x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
-                c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
-                c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
-                # Need to not write overlapping pos
-                if f1!=self.minpos and f1!=self.maxpos:
-                    c.create_text(x1,pad-5,text=str(f1),anchor='s')
-                if f2!=self.minpos and f2!=self.maxpos:
-                    c.create_text(x2,pad+5,text=str(f2),anchor='n')
+        if sum(len(c) for c in content) < 30:
+            for n,t in enumerate(content):
+                for k,feat in enumerate(t):
+                    f1,f2 = (feat[0],feat[1])
+                    x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
+                    # ticks
+                    c.create_line(x1,pad,x1,pad-5,fill=self.line_col)
+                    c.create_line(x2,pad,x2,pad+5,fill=self.line_col)
+                    # labels
+                    if f1!=self.minpos and f1!=self.maxpos:
+                        c.create_text(x1,pad-5,text=str(f1),anchor='s')
+                    if f2!=self.minpos and f2!=self.maxpos:
+                        c.create_text(x2,pad+5,text=str(f2),anchor='n')
+        else: # regular, linear scale
+            ticksize = (self.maxpos-self.minpos) // self.nticks
+            for n,k in enumerate(range(self.minpos+ticksize,self.maxpos,ticksize)):
+                x = self.bp2px(k-self.minpos,self.wcanvas,self.reg_bp)
+                if n%2 == 0:
+                    c.create_line(x,pad,x,pad-5,fill=self.line_col)
+                    c.create_text(x,pad-5,text=str(k),anchor='s')
+                else:
+                    c.create_line(x,pad,x,pad+5,fill=self.line_col)
+                    c.create_text(x,pad+5,text=str(k),anchor='n')
         min_label = tk.Label(text=str(self.minpos),bd=0,bg=self.bg,anchor='e')
         min_label.grid(row=len(self.names)+1,column=0,sticky='e',padx=5)
         max_label = tk.Label(text=str(self.maxpos),bd=0,bg=self.bg,anchor='w')
@@ -416,16 +489,17 @@ class Gless(object):
                 return 'density'
 
     def parse_selection(self,sel):
+        """Transform 'chr1:12' into {'chr':'chr1','start':(12,12)}."""
         if not sel: return None
-        elif re.search('^chr[0-9XY]*:[0-9XY]+-[0-9XY]+',sel):
-            chr,coord = sel.split(':')
-            st,en = coord.split('-')
-            return {'chr':chr,'start':(int(st),int(en)),'end':(int(st),int(en))}
+        elif re.search('^chr[0-9XY]*:[0-9XY]+',sel):
+            chr,start = sel.split(':')
+            return {'chr':chr,'start':(int(start),int(start))}
         elif re.search('^chr[0-9XY]*$',sel):
             return {'chr':sel}
-        else: print "Bad region formatting, got -s %s,." % sel; sys.exit(1)
+        else: sys.exit("Bad region formatting, got '-s %s' ." % sel)
 
     def get_score_limits(self,fix):
+        """Transform '5,100' into (5,100)."""
         if not fix: return
         elif len(fix.split(','))==1: return (0,float(fix))
         elif len(fix.split(','))==2: return tuple(float(x) for x in fix.split(','))
@@ -436,8 +510,7 @@ class Gless(object):
         self.stream = self.reader.read()
         try: self.content = self.stream.next()
         except StopIteration:
-            print "Nothing to show"
-            sys.exit(0)
+            sys.exit("Nothing to show")
         chrom = self.reader.chrom
         while True:
             if self.needtodraw:
@@ -460,11 +533,13 @@ class Gless(object):
                 self.slow_forward()
 
     def reinit(self):
+        """Called after chrom change or returning to the beginning."""
         self.drawer.minpos = 0
         self.drawer.maxpos = 0
         self.reader.ntimes = 1
 
     def load_next(self):
+        """Load next set of features and draw the new figure."""
         try:
             self.content = self.stream.next() # Load next data
             for w in self.drawer.root.children.values(): # Clear the window
@@ -503,7 +578,7 @@ class Gless(object):
 
 ###############################################################################
 
-"""If no explicit selection, chromosomes are base on the first track."""
+"""If no explicit selection, chromosomes are based on the first track."""
 
 def main():
     parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
@@ -512,8 +587,8 @@ def main():
     parser.add_argument('-b','--nbp', default=None, type=int,
                        help="Number of base pairs to display, exclusive with -n.")
     parser.add_argument('-s','--sel', default=None,
-                       help="Region to display, formatted as in 'chr1:12-34', or \
-                             a chromosome only ('chr1').")
+                       help="Region to display, formatted as <chr>:<start> (e.g. 'chr1:12'),\
+                             or a chromosome name only ('chr1').")
     parser.add_argument('-f','--fix', default=None,
                        help="Fixed range of scores for the vertical scale. One number \
                             (e.g. -f 10) indicates the max; two numbers separated by a comma \
@@ -522,24 +597,13 @@ def main():
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
     if args.nbp: args.nfeat = None
-    elif args.nfeat and args.nfeat > 10000:
-        print "Up to 10000 features permitted, got -n %s." % args.nfeat; sys.exit(1)
     Gless(args.file,args.nfeat,args.nbp,args.sel,args.fix)()
 
 if __name__ == '__main__':
     sys.exit(main())
 
-
-
-#fuckinfile = "/Users/julien/Library/Saved Application State/org.python.python.savedState"
-#os.chmod(fuckinfile,0o777)
-#os.remove(fuckinfile) # bug on osx
-
-#print c.winfo_reqheight(), c.winfo_reqwidth()
-#print c.winfo_width(), c.winfo_height()
-#bg = "#%02x%02x%02x" % (255, 255, 224) #beige background
-    #c.create_line(0,0,0,self.htrack,fill="grey") # separator label|canvas
-    #c.create_line(0,0,0,2*pad,fill=line_col)         # separator
-        #if self.geometry: # keep previous position of the window
-        #    self.geometry = '+'.join(['']+self.geometry.split('+')[1:]) # "+70+27"
-        #    self.root.geometry(self.geometry)
+#------------------------------------------------------#
+# This code was written by Julien Delafontaine         #
+# Bioinformatics and Biostatistics Core Facility, EPFL #
+# julien.delafontaine@epfl.ch                          #
+#------------------------------------------------------#

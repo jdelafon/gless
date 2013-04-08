@@ -1,15 +1,20 @@
+
 gless test1.bed
 gless -n 4 test1.bed
 gless test1.bed test2.bed test1.bedgraph test2.bedgraph
 gless -n 20 test1.bed test2.bed test1.bedgraph test2.bedgraph
 gless -b 50 test1.bed test2.bed test1.bedgraph test2.bedgraph
+
 gless -n 50 -s chr2 test1.bed test2.bed test1.bedgraph test2.bedgraph
 gless -n 5 -s chr2 test1.bed test2.bed test1.bedgraph test2.bedgraph
-gless -b 50 -s chr2 test1.bed test2.bed test1.bedgraph test2.bedgraph
+gless -b 50 -s chr2:17 test1.bed test2.bed test1.bedgraph test2.bedgraph
+
 gless -b 30000 -s chr1 input_EV.bedGraph input_T.bedGraph
 gless -b 30000 -s chr1 -f 100 input_EV.bedGraph input_T.bedGraph
-gless -b 30000 -s chr1:10000-30000 -f 100 input_EV.bedGraph input_T.bedGraph
+gless -b 20000 -s chr1:10000 -f 100 input_EV.bedGraph input_T.bedGraph
+
 gless -n 4 ZT26_peaks.bed ZT26_summits.bed
 gless -n 20 ZT26_peaks.bed ZT26_summits.bed
 
-gless -b 500 -s chr1:10000-30000 -f 100 input_EV.bedGraph input_T.bedGraph
+
+
