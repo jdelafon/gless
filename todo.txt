@@ -1,5 +1,4 @@
 // rotate coordinates label -> impossible in Tkinter...
-* if too many labels, display a regular scale
 * handle strand info for bed
 * scroll partially/backwards
 * redimension main window
