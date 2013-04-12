@@ -25,8 +25,7 @@ Options:
 
 * -n nfeat: display the next *nfeat* features (from all tracks together).
 * -b nbp: display the next *nbp* base pairs window.
-* -y ylim: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`,
-  where <min> is the min negative value to display, <max> the max positive one.
+* -y ylim: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`.
 * -s sel: selection: either a chromosome name, or a region specified as <chr>:<start>.
   The right bound is set by the -n/-b argument."
 
@@ -403,50 +402,49 @@ class Drawer(object):
                     if g == '00': g = "%d-%d" % (f1,f2)
                     name_map[c][r] = g
             elif type == 'density':
-                hi = 2*self.htrack
-                c.config(height=hi)
-                maxpos = self.ylim.get('max',0) or max([0]+[float(x[2]) for x in t]) # max score to display
-                minneg = -self.ylim.get('min',0) or min([0]+[float(x[2]) for x in t]) # min score to display
-                score_range = maxpos-minneg
-                if maxpos:
-                    pos_scale = hi*(maxpos/score_range) / maxpos # score to px
-                    mid = maxpos*pos_scale-1 # position of the baseline
-                else:
-                    pos_scale = 0
-                    mid = 1
-                if minneg:
-                    neg_scale = hi*(minneg/score_range) / minneg
-                else:
-                    neg_scale = 0
-                    mid = hi-1
-                c.create_line(0,mid,self.WIDTH,mid,fill=self.line_col) # baseline
-                for k,feat in enumerate(t):
-                    f1,f2,g = (feat[0],feat[1],feat[2])
-                    x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
-                    x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
-                    s = float(g)
-                    if f1 == self.minpos: x1-=1 # no border
-                    if s > 0:
-                        s = s*pos_scale
-                        r = c.create_rectangle(x1,mid,x2,mid-s+5,fill=self.dens_col)
-                    else:
-                        s = s*neg_scale
-                        r = c.create_rectangle(x1,mid,x2,mid-s-5,fill=self.dens_col)
-                    name_map[c][r] = str(g)
                 m = 6 # margin
-                if maxpos:
-                    maxpx = mid-maxpos*pos_scale+m
-                    c.create_line(0,maxpx,5,maxpx) # little vertical tick, max
-                    c.create_text(6,maxpx,text=str(maxpos),anchor='w') # max label
+                hi = 2 * self.htrack # twice higher than for intervals
+                c.config(height=hi)
+                if t:
+                    ymax = self.ylim.get('max', max(float(x[2]) for x in t)) # max score to display
+                    ymin = self.ylim.get('min', min(float(x[2]) for x in t)) # min score to display
+                    yrange = abs(ymax-ymin)
+                    if yrange: scale = (hi-2*m) / yrange # score to px
+                    else: scale = 1
+                    mid = max(0, ymax*scale +m-1)
+                    for k,feat in enumerate(t):
+                        f1,f2,g = (feat[0],feat[1],feat[2])
+                        x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
+                        x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
+                        s = float(g)
+                        if f1 == self.minpos: x1-=1 # no border
+                        if s > 0:
+                            if s > self.ylim.get('min',-1) > 0:
+                                s = s - self.ylim['min']
+                            if self.ylim.get('max'):
+                                s = min(s,self.ylim['max'])
+                            spx = mid-s*scale -1
+                        else:
+                            if s < self.ylim.get('max',1) < 0:
+                                s = s - self.ylim['max']
+                            if self.ylim.get('min'):
+                                s = max(s,self.ylim['min'])
+                            spx = mid-s*scale +1
+                        r = c.create_rectangle(x1,mid,x2,spx,fill=self.dens_col)
+                        name_map[c][r] = str(g)
+                    ymax_px = m
+                    ymin_px = yrange*scale + m
+                    if ymax > 0:
+                        c.create_line(0,ymax_px,5,ymax_px) # little horizontal tick, max
+                        c.create_text(6,ymax_px,text=str(ymax),anchor='w') # max label
+                    if ymin < 0:
+                        c.create_line(0,ymin_px,5,ymin_px) # little horizontal tick, min
+                        c.create_text(6,ymin_px,text=str(ymin),anchor='w') # min label
+                    c.create_line(2,max(ymin_px,mid),2,min(mid,ymax_px)) # vertical scale
+                    bl = min(hi-1,max(0, ymax*scale +m-1)) # position of the baseline
+                    c.create_line(0,bl,self.WIDTH,bl,fill=self.line_col) # baseline
                 else:
-                    maxpx = mid
-                if minneg:
-                    minpx = mid-minneg*neg_scale-m
-                    c.create_line(0,minpx,5,minpx) # little vertical tick, min
-                    c.create_text(6,minpx,text=str(minneg),anchor='w') # min label
-                else:
-                    minpx = mid
-                c.create_line(2,minpx,2,maxpx) # vertical scale
+                    c.create_line(0,hi/2,self.WIDTH,hi/2,fill=self.line_col,dash=1) # baseline
         back = tk.Frame(self.root,bg=self.canvas_bg,width=self.wcanvas) # blank background
         back.grid(column=1,row=0,rowspan=len(self.names),sticky=["N","S"])
         back.lower()
@@ -612,10 +610,10 @@ class Gless(object):
 
 ###############################################################################
 
-"""If no explicit selection, chromosomes are based on the first track."""
-
 def main():
-    parser = argparse.ArgumentParser(description="Graphical 'less' for track files.")
+    parser = argparse.ArgumentParser(description="Graphical 'less' for track files\n. \
+                       Press the SPACE bar to read forward, RETURN (or Delete) to \
+                       return to the beginning, ESC to quit.")
     parser.add_argument('-n','--nfeat', default=10, type=int,
                        help="Number of features to display, exclusive with -b. [10]")
     parser.add_argument('-b','--nbp', default=None, type=int,
@@ -627,10 +625,8 @@ def main():
     parser.add_argument('-y','--ylim', default=None,
                        help="Fixed range of scores for the vertical scale. One number \
                             (e.g. -y 10) indicates the max positive value to display; \
-                            two numbers separated by a comma (e.g. -y 5,10) indicate \
-                            the min negative and the max positive values to display. \
-                            (Do not add a minus sign for the negative bound as it is \
-                            reserved for command-line options).")
+                            two numbers separated by a comma indicate the min and the max. \
+                            For negative values, make sure to use the equal sign (e.g. -y=-5,10).")
     parser.add_argument('file', nargs='+', default=None,
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
@@ -643,5 +639,5 @@ if __name__ == '__main__':
 #------------------------------------------------------#
 # This code was written by Julien Delafontaine         #
 # Bioinformatics and Biostatistics Core Facility, EPFL #
-# julien.delafontaine@epfl.ch                          #
+# julien.delafontaine@yandex.com                       #
 #------------------------------------------------------#
