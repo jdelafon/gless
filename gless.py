@@ -25,8 +25,10 @@ Options:
 
 * -n nfeat: display the next *nfeat* features (from all tracks together).
 * -b nbp: display the next *nbp* base pairs window.
-* -f fix: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`.
+* -y ylim: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`,
+  where <min> is the min negative value to display, <max> the max positive one.
 * -s sel: selection: either a chromosome name, or a region specified as <chr>:<start>.
+  The right bound is set by the -n/-b argument."
 
 Known issues:
 =============
@@ -80,15 +82,18 @@ except ImportError:
 
 ###############################################################################
 
-class Memory(object):
+class Memory(object): # Not working yet
     def __init__(self):
         self.content = []
+        self.chrom = None
+        self.limit = 10
 
-    def load(self,content):
-        pass
+    def save(self,content):
+        chrom = content[0][0][0]
+        self.content.setdefault(chrom,[]).append(content)
 
-    def get(self,content):
-        pass
+    def load(self):
+        return self.content[-1]
 
 ###############################################################################
 
@@ -151,6 +156,8 @@ class Reader(object):
                 except StopIteration:
                     self.temp.pop(i)
                     self.available_streams.remove(i)
+                except IndexError:
+                    sys.exit("Unknown region.")
             self.chrom = self.sel['chr']
             if self.nbp:
                 temppos = [x[1] for x in self.temp if x[3]!='00']
@@ -246,13 +253,13 @@ class Reader(object):
 ###############################################################################
 
 class Drawer(object):
-    def __init__(self,names,types,nfeat,nbp,sel,fix):
+    def __init__(self,names,types,nfeat,nbp,sel,ylim):
         self.names = names # [file names]
         self.types = types # ['intervals' or 'density']
         self.nfeat = nfeat
         self.nbp = nbp
         self.sel = sel     # selection, of the type {'chr':'chr1','start':(1,1),'end':(2,2)}
-        self.fix = fix     # (limits,) for the range of the vertical scale
+        self.ylim = ylim   # (limits,) for the range of the vertical scale
         self.ntimes = 0    # number of times the draw function is called
         self.maxpos = 0    # rightmost coordinate to display
         self.minpos = 0    # leftmost coordinate to display
@@ -398,23 +405,48 @@ class Drawer(object):
             elif type == 'density':
                 hi = 2*self.htrack
                 c.config(height=hi)
-                c.create_line(0,hi-1,self.WIDTH,hi-1,fill=self.line_col) # baseline
-                if t:
-                    top_bp = self.fix[1] if self.fix else max(float(x[2]) for x in t) # highest score
-                    top = self.bp2px(top_bp,hi,top_bp)
-                    for k,feat in enumerate(t):
-                        f1,f2,g = (feat[0],feat[1],feat[2])
-                        x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
-                        x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
-                        s = float(g)-self.fix[0] if self.fix else float(g)
-                        s = self.bp2px(s,hi,top_bp)
-                        if f1 == self.minpos: x1-=1 # no border
-                        if s > 0:
-                            r = c.create_rectangle(x1,hi-1,x2,hi-s+5,fill=self.dens_col)
-                            name_map[c][r] = str(g)
-                    c.create_line(0,hi-top+5,5,hi-top+5) # vertical scale
-                    c.create_line(2,hi,2,hi-top+5) # vertical scale
-                    c.create_text(6,hi-top+5,text=str(top_bp),anchor='w')
+                maxpos = self.ylim.get('max',0) or max([0]+[float(x[2]) for x in t]) # max score to display
+                minneg = -self.ylim.get('min',0) or min([0]+[float(x[2]) for x in t]) # min score to display
+                score_range = maxpos-minneg
+                if maxpos:
+                    pos_scale = hi*(maxpos/score_range) / maxpos # score to px
+                    mid = maxpos*pos_scale-1 # position of the baseline
+                else:
+                    pos_scale = 0
+                    mid = 1
+                if minneg:
+                    neg_scale = hi*(minneg/score_range) / minneg
+                else:
+                    neg_scale = 0
+                    mid = hi-1
+                c.create_line(0,mid,self.WIDTH,mid,fill=self.line_col) # baseline
+                for k,feat in enumerate(t):
+                    f1,f2,g = (feat[0],feat[1],feat[2])
+                    x1 = self.bp2px(f1-self.minpos,self.wcanvas,self.reg_bp)
+                    x2 = self.bp2px(f2-self.minpos,self.wcanvas,self.reg_bp)
+                    s = float(g)
+                    if f1 == self.minpos: x1-=1 # no border
+                    if s > 0:
+                        s = s*pos_scale
+                        r = c.create_rectangle(x1,mid,x2,mid-s+5,fill=self.dens_col)
+                    else:
+                        s = s*neg_scale
+                        r = c.create_rectangle(x1,mid,x2,mid-s-5,fill=self.dens_col)
+                    name_map[c][r] = str(g)
+                m = 6 # margin
+                if maxpos:
+                    maxpx = mid-maxpos*pos_scale+m
+                    c.create_line(0,maxpx,5,maxpx) # little vertical tick, max
+                    c.create_text(6,maxpx,text=str(maxpos),anchor='w') # max label
+                else:
+                    maxpx = mid
+                if minneg:
+                    minpx = mid-minneg*neg_scale-m
+                    c.create_line(0,minpx,5,minpx) # little vertical tick, min
+                    c.create_text(6,minpx,text=str(minneg),anchor='w') # min label
+                else:
+                    minpx = mid
+                c.create_line(2,minpx,2,maxpx) # vertical scale
         back = tk.Frame(self.root,bg=self.canvas_bg,width=self.wcanvas) # blank background
         back.grid(column=1,row=0,rowspan=len(self.names),sticky=["N","S"])
         back.lower()
@@ -434,7 +466,7 @@ class Drawer(object):
         c.grid(row=len(self.names)+1,column=1)
         pad = c.winfo_reqheight()/2.
         c.create_line(0,pad,self.WIDTH,pad,fill=self.line_col)  # axis
-        if sum(len(c) for c in content) < 30:
+        if sum(len(c) for c in content) <= 10*len(content):
             for n,t in enumerate(content):
                 for k,feat in enumerate(t):
                     f1,f2 = (feat[0],feat[1])
@@ -449,7 +481,7 @@ class Drawer(object):
                     if f2!=self.minpos and f2!=self.maxpos:
                         c.create_text(x2,pad+5,text=str(f2),anchor='n')
         else: # regular, linear scale
-            ticksize = (self.maxpos-self.minpos) // self.nticks
+            ticksize = (self.maxpos-self.minpos) // self.nticks or 1
             for n,k in enumerate(range(self.minpos+ticksize,self.maxpos,ticksize)):
                 x = self.bp2px(k-self.minpos,self.wcanvas,self.reg_bp)
                 if n%2 == 0:
@@ -466,7 +498,7 @@ class Drawer(object):
 ###############################################################################
 
 class Gless(object):
-    def __init__(self,trackList,nfeat,nbp,sel,fix):
+    def __init__(self,trackList,nfeat,nbp,sel,ylim):
         self.trackList = trackList
         self.nfeat = nfeat
         self.nbp = nbp
@@ -476,9 +508,10 @@ class Gless(object):
         self.stream = None
         self.content = None
         self.needtodraw = True
-        fix = self.get_score_limits(fix)
+        ylim = self.get_score_limits(ylim)
         self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
-        self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp,self.reader.sel,fix)
+        self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp,self.reader.sel,ylim)
+        self.memory = Memory() # Not working yet
 
     def get_type(self,filename):
         """Return whether it is a track with 'intervals' or a 'density'."""
@@ -498,12 +531,13 @@ class Gless(object):
             return {'chr':sel}
         else: sys.exit("Bad region formatting, got '-s %s' ." % sel)
 
-    def get_score_limits(self,fix):
-        """Transform '5,100' into (5,100)."""
-        if not fix: return
-        elif len(fix.split(','))==1: return (0,float(fix))
-        elif len(fix.split(','))==2: return tuple(float(x) for x in fix.split(','))
-        else: sys.exit("Wrong format for -f option: got %s." % fix)
+    def get_score_limits(self,ylim):
+        """Transform '5,100' into {'min':5,'max':100}."""
+        if not ylim: return {}
+        elif len(ylim.split(','))==1: return {'max':float(ylim)}
+        elif len(ylim.split(','))==2: return {'min':float(ylim.split(',')[0]),
+                                              'max':float(ylim.split(',')[1])}
+        else: sys.exit("Wrong format for -f option: got %s." % ylim)
 
     def __call__(self):
         """Main controller function."""
@@ -588,16 +622,20 @@ def main():
                        help="Number of base pairs to display, exclusive with -n.")
     parser.add_argument('-s','--sel', default=None,
                        help="Region to display, formatted as <chr>:<start> (e.g. 'chr1:12'),\
-                             or a chromosome name only ('chr1').")
-    parser.add_argument('-f','--fix', default=None,
+                             or a chromosome name only ('chr1'). The right bound is set \
+                             by the -n/-b argument.")
+    parser.add_argument('-y','--ylim', default=None,
                        help="Fixed range of scores for the vertical scale. One number \
-                            (e.g. -f 10) indicates the max; two numbers separated by a comma \
-                            (e.g. -f 5,10) indicate the min and max.")
+                            (e.g. -y 10) indicates the max positive value to display; \
+                            two numbers separated by a comma (e.g. -y 5,10) indicate \
+                            the min negative and the max positive values to display. \
+                            (Do not add a minus sign for the negative bound as it is \
+                            reserved for command-line options).")
     parser.add_argument('file', nargs='+', default=None,
                        help='A set of track files, separated by spaces')
     args = parser.parse_args()
     if args.nbp: args.nfeat = None
-    Gless(args.file,args.nfeat,args.nbp,args.sel,args.fix)()
+    Gless(args.file,args.nfeat,args.nbp,args.sel,args.ylim)()
 
 if __name__ == '__main__':
     sys.exit(main())
