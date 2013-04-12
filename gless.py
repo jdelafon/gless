@@ -25,8 +25,10 @@ Options:
 
 * -n nfeat: display the next *nfeat* features (from all tracks together).
 * -b nbp: display the next *nbp* base pairs window.
-* -f ylim: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`.
+* -y ylim: set the vertical scale for numeric tracks: either `<min>,<max>` or just `<max>`,
+  where <min> is the min negative value to display, <max> the max positive one.
 * -s sel: selection: either a chromosome name, or a region specified as <chr>:<start>.
+  The right bound is set by the -n/-b argument."
 
 Known issues:
 =============
