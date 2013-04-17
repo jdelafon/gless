@@ -442,9 +442,9 @@ class Drawer(object):
                         c.create_text(6,ymin_px,text=str(ymin),anchor='w') # min label
                     c.create_line(2,max(ymin_px,mid),2,min(mid,ymax_px)) # vertical scale
                     bl = min(hi-1,max(0, ymax*scale +m-1)) # position of the baseline
-                    c.create_line(0,bl,self.WIDTH,bl,fill=self.line_col) # baseline
+                    c.create_line(0,bl,self.wcanvas,bl,fill=self.line_col) # baseline
                 else:
-                    c.create_line(0,hi/2,self.WIDTH,hi/2,fill=self.line_col,dash=1) # baseline
+                    c.create_line(0,hi/2,self.wcanvas,hi/2,fill=self.line_col,dash=1) # baseline
         back = tk.Frame(self.root,bg=self.canvas_bg,width=self.wcanvas) # blank background
         back.grid(column=1,row=0,rowspan=len(self.names),sticky=["N","S"])
         back.lower()
