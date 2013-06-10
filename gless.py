@@ -7,7 +7,7 @@ This application is designed to be used as a graphical equivalent of the `less` 
 in Unix to better visualize track files. It will give you an insight of the content of
 your files that is probably telling more than columns of numbers.
 
-If the library `bbcflib` is found on your system, `btrack` will be used and will
+If the library `bbcflib` is found on your system, `track` will be used and will
 recognize .bed, .bedgraph, .wig, .sga, .bigWig, .sql, .sam formats. Else it can still
 read .bed and .bedGraph files.
 
@@ -46,7 +46,7 @@ import csv
 ###############################################################################
 
 class Parser(object):
-    #A replacement for btrack when bbcflib is not found, able to parse
+    #A replacement for track when bbcflib is not found, able to parse
     #bed and bedGraph formats only. Called in the Reader class."""
     def __init__(self,filename):
         self.path = os.path.abspath(filename)
@@ -74,7 +74,7 @@ class Parser(object):
                               % (os.path.basename(self.path),'\t'.join(line)) ))
                 yield (chr,start,end,other)
 try:
-    from bbcflib.btrack import track
+    from bbcflib.track import track
     assert track
 except ImportError:
     track = Parser

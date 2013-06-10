@@ -6,7 +6,7 @@ Installation:
 * Run "gless" on the command-line, "gless -h" for usage instructions.
 * More documentation in the doc/_build/html folder.
 
-If the library `bbcflib` is found on your system, `btrack` will be used and will
+If the library `bbcflib` is found on your system, `track` will be used and will
 recognize .bed, .bedgraph, .wig, .sga, .bigWig, .sql, .sam formats. Else it can still
 read .bed and .bedGraph files.
 
