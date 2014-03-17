@@ -522,7 +522,7 @@ class Gless(object):
     def get_type(self,filename):
         """Return whether it is a track with 'intervals' or a 'density'."""
         with track(filename) as t:
-            if t.format.lower() in ['bed','sam']:
+            if t.format.lower() in ['bed','sam','bam']:
                 return 'intervals'
             elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
                 return 'density'
