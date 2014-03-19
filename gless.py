@@ -116,13 +116,21 @@ class Reader(object):
     def init_chr(self):
         """Find the initial chromosome name."""
         for t in self.tracks:
-            try: return t.read().next()[0]
+            try: return t.read().next()[t.fields.index('chr')]
             except StopIteration: continue
 
     def read(self):
-        """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6,n)]] with either the *nfeat*
-           next items, or all next items within an *nbp* window. `n` is a name or a score."""
-        streams = [t.read(fields=t.fields[:4]) for t in self.tracks]
+        """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6,n)]] with either the *self.nfeat*
+           next items, or all next items within an *self.nbp* window. `n` is a name or a score."""
+        streams = []
+        for t in self.tracks:
+            if all(f in t.fields for f in ["chr","start","end"]):
+                _f = ["chr","start","end"]
+                if "name" in t.fields:
+                    _f.append("name")
+            else:
+                _f = t.fields[:4]
+            streams.append(t.read(fields=_f))
         self.go_to_selection(streams)
         if self.nfeat:
             content = self.read_nfeat(streams)
@@ -514,7 +522,7 @@ class Gless(object):
     def get_type(self,filename):
         """Return whether it is a track with 'intervals' or a 'density'."""
         with track(filename) as t:
-            if t.format.lower() in ['bed']:
+            if t.format.lower() in ['bed','sam','bam']:
                 return 'intervals'
             elif t.format.lower() in ['bedgraph','wig','bigWig','sga']:
                 return 'density'
