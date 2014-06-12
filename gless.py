@@ -73,6 +73,7 @@ class Parser(object):
                               "Wrong line in file %s:\n%s"
                               % (os.path.basename(self.path),'\t'.join(line)) ))
                 yield (chr,start,end,other)
+
 try:
     from bbcflib.track import track
     assert track
@@ -97,10 +98,11 @@ class Memory(object): # Not working yet
 ###############################################################################
 
 class Reader(object):
-    def __init__(self,trackList,nfeat,nbp,sel):
+    def __init__(self,trackList,nfeat,nbp,sel,types):
         self.tracks = [track(t) for t in trackList]
         self.available_streams = range(len(trackList))
         self.sel = sel
+        self.types = types
         self.temp = []
         self.chrom = self.init_chr()
         self.chrom_change = False
@@ -123,11 +125,13 @@ class Reader(object):
         """Yield a list of lists [[(1,2,n),(3,4,n)], [(1,3,n),(5,6,n)]] with either the *self.nfeat*
            next items, or all next items within an *self.nbp* window. `n` is a name or a score."""
         streams = []
-        for t in self.tracks:
+        for n,t in enumerate(self.tracks):
             if all(f in t.fields for f in ["chr","start","end"]):
                 _f = ["chr","start","end"]
-                if "name" in t.fields:
+                if self.types[n]=='intervals' and "name" in t.fields:
                     _f.append("name")
+                elif self.types[n]=='density' and "score" in t.fields:
+                    _f.append("score")
             else:
                 _f = t.fields[:4]
             streams.append(t.read(fields=_f))
@@ -515,7 +519,7 @@ class Gless(object):
         self.content = None
         self.needtodraw = True
         ylim = self.get_score_limits(ylim)
-        self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
+        self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel,self.types)
         self.drawer = Drawer(self.names,self.types,self.nfeat,self.nbp,self.reader.sel,ylim)
         self.memory = Memory() # Not working yet
 
@@ -595,7 +599,7 @@ class Gless(object):
 
     def return_to_beginning(self):
         self.reinit()
-        self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel)
+        self.reader = Reader(self.trackList,self.nfeat,self.nbp,self.sel,self.types)
         self.stream = self.reader.read()
         self.load_next()
 
